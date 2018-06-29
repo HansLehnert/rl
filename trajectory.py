@@ -9,7 +9,7 @@ def generate_path(
         start_rotation,
         scene,
         time=15,
-        time_delta=0.2,
+        time_delta=0.02,
         perimeter=0.03):
     """Generate a 2D random walk.
 
@@ -30,13 +30,14 @@ def generate_path(
         # Check if the current position lies in the perimeter
         dist_vec = closest_wall(pos[i], scene) - pos[i]
         dist_wall = np.linalg.norm(dist_vec)
-        angle_wall = (np.arctan2(*dist_vec) - rot[i]) % (2 * np.pi)
+        angle_wall = (np.arctan2(dist_vec[1], dist_vec[0]) - rot[i])
+        angle_wall = (angle_wall + np.pi) % (2 * np.pi) - np.pi
 
         # Compute speed and turn depending on
         turn = np.random.normal(scale=(330 * np.pi / 180)) * time_delta
         if dist_wall < perimeter and np.abs(angle_wall) < np.pi / 2:
             vel[i + 1] = vel[i] * 0.75
-            turn += angle_wall
+            turn -= (np.pi / 2 - np.abs(angle_wall)) * np.sign(angle_wall)
         else:
             vel[i + 1] = np.random.rayleigh(0.13)
 
@@ -45,7 +46,12 @@ def generate_path(
         pos[i + 1] = pos[i] + head_vec * vel[i + 1] * time_delta
         rot[i + 1] = rot[i] + turn
 
-    return {'position': pos}
+    result = {
+        'position': pos,
+        'rotation': rot,
+        'velocity': vel}
+
+    return result
 
 
 def closest_wall(position, scene):
@@ -72,20 +78,24 @@ def draw_scene(scene, *args, **kwargs):
         plt.plot((a[0], b[0]), (a[1], b[1]), *args, **kwargs)
 
 
+def generate_square_scene(size):
+    """Generate a simple scene with four walls."""
+    scene = [
+        (np.array((0.0, 0.0)), np.array((size, 0.0))),
+        (np.array((0.0, 0.0)), np.array((0.0, size))),
+        (np.array((size, size)), np.array((size, 0.0))),
+        (np.array((size, size)), np.array((0.0, size)))]
+
+    return scene
+
+
 if __name__ == '__main__':
-    scene = (
-        (np.array((0.0, 0.0)), np.array((2.2, 0.0))),
-        (np.array((0.0, 0.0)), np.array((0.0, 2.2))),
-        (np.array((2.2, 2.2)), np.array((2.2, 0.0))),
-        (np.array((2.2, 2.2)), np.array((0.0, 2.2))),
-    )
+    scene = generate_square_scene(2.2)
+    scene += [(np.array([0.4, 1.1]), np.array([1.8, 1.1]))]
 
-    plt.figure(1)
+    path = generate_path((1.1, 1.5), 0.1, scene, 200, 0.02, 0.03)
+
     draw_scene(scene, 'k')
-
-    path = generate_path((1.1, 1.1), 0, scene, 100, 0.02)
-
-    plt.figure(1)
     plt.plot(path['position'][:, 0], path['position'][:, 1])
 
     plt.show()
