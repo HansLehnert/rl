@@ -24,7 +24,8 @@ def generate_path(
     rot = np.zeros((steps))
     rot[0] = start_rotation
 
-    vel = np.zeros((steps,))
+    vel_disp = np.zeros((steps,))
+    vel_turn = np.zeros((steps,))
 
     for i in range(0, steps - 1):
         # Check if the current position lies in the perimeter
@@ -34,22 +35,25 @@ def generate_path(
         angle_wall = (angle_wall + np.pi) % (2 * np.pi) - np.pi
 
         # Compute speed and turn depending on
-        turn = np.random.normal(scale=(330 * np.pi / 180)) * time_delta
+        vel_turn[i + 1] = np.random.normal(scale=(330 * np.pi / 180))
         if dist_wall < perimeter and np.abs(angle_wall) < np.pi / 2:
-            vel[i + 1] = vel[i] * 0.75
-            turn -= (np.pi / 2 - np.abs(angle_wall)) * np.sign(angle_wall)
+            vel_disp[i + 1] = vel_disp[i] * 0.75
+            vel_turn[i + 1] -= (
+                (np.pi / 2 - np.abs(angle_wall)) * np.sign(angle_wall)
+                / time_delta)
         else:
-            vel[i + 1] = np.random.rayleigh(0.13)
+            vel_disp[i + 1] = np.random.rayleigh(0.13)
 
         # Update position
         head_vec = np.array((np.cos(rot[i - 1]), np.sin(rot[i - 1])))
-        pos[i + 1] = pos[i] + head_vec * vel[i + 1] * time_delta
-        rot[i + 1] = rot[i] + turn
+        pos[i + 1] = pos[i] + head_vec * vel_disp[i + 1] * time_delta
+        rot[i + 1] = rot[i] + vel_turn[i + 1] * time_delta
 
     result = {
         'position': pos,
         'rotation': rot,
-        'velocity': vel}
+        'translation_speed': vel_disp,
+        'turn_speed': vel_turn}
 
     return result
 
@@ -93,7 +97,11 @@ if __name__ == '__main__':
     scene = generate_square_scene(2.2)
     scene += [(np.array([0.4, 1.1]), np.array([1.8, 1.1]))]
 
-    path = generate_path((1.1, 1.5), 0.1, scene, 200, 0.02, 0.03)
+    path = generate_path(
+        np.random.uniform(0.1, 2.1, (2,)),
+        np.random.uniform(-np.pi, np.pi),
+        scene,
+        200)
 
     draw_scene(scene, 'k')
     plt.plot(path['position'][:, 0], path['position'][:, 1])
