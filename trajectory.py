@@ -52,7 +52,7 @@ def generate_path(
     result = {
         'position': pos,
         'rotation': rot,
-        'translation_speed': vel_disp,
+        'disp_speed': vel_disp,
         'turn_speed': vel_turn}
 
     return result
