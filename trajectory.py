@@ -10,12 +10,16 @@ def generate_path(
         scene,
         time=15,
         time_delta=0.02,
-        perimeter=0.03):
+        perimeter=0.03,
+        random=None):
     """Generate a 2D random walk.
 
     scene: a list of vector pairs describing the segments which form the
     environment
     """
+    if random is None:
+        random = np.random.RandomState()
+
     steps = int(time / time_delta)
 
     pos = np.zeros((steps, 2))
@@ -35,14 +39,14 @@ def generate_path(
         angle_wall = (angle_wall + np.pi) % (2 * np.pi) - np.pi
 
         # Compute speed and turn depending on
-        vel_turn[i + 1] = np.random.normal(scale=(330 * np.pi / 180))
+        vel_turn[i + 1] = random.normal(scale=(330 * np.pi / 180))
         if dist_wall < perimeter and np.abs(angle_wall) < np.pi / 2:
             vel_disp[i + 1] = vel_disp[i] * 0.75
             vel_turn[i + 1] -= (
                 (np.pi / 2 - np.abs(angle_wall)) * np.sign(angle_wall)
                 / time_delta)
         else:
-            vel_disp[i + 1] = np.random.rayleigh(0.13)
+            vel_disp[i + 1] = random.rayleigh(0.13)
 
         # Update position
         head_vec = np.array((np.cos(rot[i - 1]), np.sin(rot[i - 1])))
@@ -100,8 +104,8 @@ if __name__ == '__main__':
     path = generate_path(
         np.random.uniform(0.1, 2.1, (2,)),
         np.random.uniform(-np.pi, np.pi),
-        scene,
-        200)
+        scene=scene,
+        time=200)
 
     draw_scene(scene, 'k')
     plt.plot(path['position'][:, 0], path['position'][:, 1])
