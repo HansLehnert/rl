@@ -2,10 +2,13 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy
+import scipy.signal
 import functools
 import copy
 import argparse
 import os
+
+import trajectory
 import input_fn
 
 
@@ -42,7 +45,10 @@ def model_grid_network(features, labels, mode):
         lstm_output,
         512, name='grid_code',
         kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-5))
-    dropout = tf.layers.dropout(linear, rate=0.5)
+    dropout = tf.layers.dropout(
+        linear,
+        rate=0.5,
+        training=(mode == tf.estimator.ModeKeys.TRAIN))
 
     # Output layer
     place_output = tf.layers.dense(
@@ -85,9 +91,8 @@ if __name__ == '__main__':
     train_parser = subparsers.add_parser('train')
     train_parser.add_argument('max_steps', type=int)
     predict_parser = subparsers.add_parser('predict')
+    predict_parser.add_argument('max_steps', type=int)
     args = parser.parse_args()
-
-    tf.logging.set_verbosity(tf.logging.INFO)
 
     # Create scene
     scene = trajectory.generate_square_scene(2.2)
@@ -103,6 +108,8 @@ if __name__ == '__main__':
     )
 
     if args.command == 'train':
+        tf.logging.set_verbosity(tf.logging.INFO)
+
         estimator.train(
             input_fn=functools.partial(
                 input_fn.create_dataset,
@@ -126,61 +133,86 @@ if __name__ == '__main__':
             input_fn=functools.partial(
                 input_fn.create_dataset,
                 batch_size=1,
-                n_data=1000,
+                n_data=args.max_steps,
                 random=copy.copy(rand_state),
                 **input_args))
 
+        n_bins = 64
+
+        activation_acc = np.zeros([512, n_bins, n_bins])
+        activation_count = np.zeros(activation_acc.shape)
+
+        print('Generating and evaluating data...')
         for n, x in enumerate(predictions):
+            if n % 100 == 0:
+                print('{}/{}'.format(n, args.max_steps))
+
             data = input_fn.generate_activations(
                 random=rand_state,
                 **input_args)
 
             if n == 0:
-                position = data['position']
-                grid_code = x['grid_code']
-            else:
-                position = np.vstack([position, data['position']])
-                grid_code = np.vstack([grid_code, x['grid_code']])
-                continue
+                for i in range(x['place_cell'].shape[1]):
+                    if (np.all(data['place_activations'][:, i] < 0.05) and
+                            np.all(x['place_cell'][:, i] < 0.05)):
+                        continue
 
-            for i in range(x['place_cell'].shape[1]):
-                if (np.all(data['place_activations'][:, i] < 0.05)
-                        and np.all(x['place_cell'][:, i] < 0.05)):
-                    continue
+                    plt.clf()
 
-                plt.clf()
+                    plt.subplot(121)
+                    plt.scatter(place_cells[:, 0], place_cells[:, 1])
+                    plt.scatter(place_cells[i, 0], place_cells[i, 1])
+                    plt.plot(
+                        data['position'][:, 0], data['position'][:, 1], 'r')
 
-                plt.subplot(121)
-                plt.scatter(place_cells[:, 0], place_cells[:, 1])
-                plt.scatter(place_cells[i, 0], place_cells[i, 1])
-                plt.plot(data['position'][:, 0], data['position'][:, 1], 'r')
+                    plt.subplot(122)
+                    plt.plot(data['place_activations'][:, i])
+                    plt.plot(x['place_cell'][:, i])
+                    plt.ylim(0, 1)
+                    plt.savefig('fig/place_{}.png'.format(i))
 
-                plt.subplot(122)
-                plt.plot(data['place_activations'][:, i])
-                plt.plot(x['place_cell'][:, i])
-                plt.ylim(0, 1)
-                plt.savefig('fig/place_{}.png'.format(i))
+                for i in range(x['head_cell'].shape[1]):
+                    if (np.all(data['head_activations'][:, i] < 0.05) and
+                            np.all(x['place_cell'][:, i] < 0.05)):
+                        continue
 
-            for i in range(x['head_cell'].shape[1]):
-                if (np.all(data['head_activations'][:, i] < 0.05)
-                        and np.all(x['place_cell'][:, i] < 0.05)):
-                    continue
+                    plt.clf()
 
-                plt.clf()
+                    plt.plot(data['head_activations'][:, i])
+                    plt.plot(x['head_cell'][:, i])
+                    plt.ylim(0, 1)
+                    plt.savefig('fig/head_{}.png'.format(i))
 
-                plt.plot(data['head_activations'][:, i])
-                plt.plot(x['head_cell'][:, i])
-                plt.ylim(0, 1)
-                plt.savefig('fig/head_{}.png'.format(i))
+            # Accumulate data for activation maps
+            for i in range(x['grid_code'].shape[0]):
+                bin_x = int(data['position'][i, 0] * n_bins / 2.2)
+                bin_y = int(data['position'][i, 1] * n_bins / 2.2)
 
-        grid_x, grid_y = np.mgrid[0:2.2:0.01, 0:2.2:0.01]
-        for i in range(0, grid_code.shape[1], 16):
+                for j in range(x['grid_code'].shape[1]):
+                    activation_acc[j, bin_x, bin_y] += x['grid_code'][i, j]
+                    activation_count[j, bin_x, bin_y] += 1
+
+        print('Plotting...')
+
+        activation_maps = activation_acc / activation_count
+        activation_maps = np.nan_to_num(activation_maps)
+
+        for i in range(0, activation_maps.shape[0], 8):
             plt.clf()
 
-            for j in range(16):
-                plt.subplot(4, 4, j + 1)
-                z = scipy.interpolate.griddata(
-                    position, grid_code[:, i + j], (grid_x, grid_y))
-                plt.imshow(z, extent=(0, 2.2, 0, 2.2))
+            for j in range(8):
+                plt.subplot(4, 4, 2 * j + 1)
+                plt.imshow(
+                    activation_maps[i + j],
+                    extent=(0, 2.2, 0, 2.2),
+                    cmap='jet')
+
+                conv = scipy.signal.correlate2d(
+                    activation_maps[i + j],
+                    activation_maps[i + j])
+
+                plt.subplot(4, 4, 2 * j + 2)
+                plt.imshow(conv, cmap='jet')
 
             plt.savefig('fig/grid_{}.png'.format(i))
+            print('{}/{}'.format(i, activation_maps.shape[0]))
