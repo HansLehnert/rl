@@ -12,12 +12,9 @@ class SimpleEnvironment():
         # 'STRAFE_RIGHT'
     )
 
-    def __init__(
-        self,
-        plot=False,
-        max_steps=100,
-    ):
+    def __init__(self, plot=False, max_steps=100, n_goals=1):
         self.max_steps = max_steps
+        self.n_goals = n_goals
 
         self.size = 8
         self.plot = plot
@@ -30,7 +27,7 @@ class SimpleEnvironment():
 
     def reset(self):
         self.player_pos = np.random.randint(0, self.size, (2,))
-        self.goal_pos = np.random.randint(0, self.size, (2,))
+        self.goal_pos = np.random.randint(0, self.size, (self.n_goals, 2))
 
         self.last_reward = 0
         self.t = 0
@@ -47,6 +44,7 @@ class SimpleEnvironment():
         elif action == 'MOVE_RIGHT':
             self.player_pos[1] += 1
 
+        # Check if player is out of bounds
         for i in range(self.player_pos.size):
             if self.player_pos[i] < 0:
                 self.player_pos[i] = 0
@@ -55,9 +53,11 @@ class SimpleEnvironment():
                 self.player_pos[i] = self.size - 1
                 self.last_reward = -1
 
-        if np.all(self.player_pos == self.goal_pos):
-            self.last_reward = 5
-            self.goal_pos = np.random.randint(0, self.size, (2,))
+        # Check if player arrived at goal:
+        for i in range(self.n_goals):
+            if np.all(self.player_pos == self.goal_pos[i]):
+                self.last_reward = 5
+                self.goal_pos[i] = np.random.randint(0, self.size, (2,))
 
         self.t += 1
 
@@ -70,7 +70,7 @@ class SimpleEnvironment():
         state_img = np.zeros((self.size, self.size, 3), dtype=np.uint8)
 
         state_img[self.player_pos[0], self.player_pos[1], 0] = 255
-        state_img[self.goal_pos[0], self.goal_pos[1], 1] = 255
+        state_img[self.goal_pos[:, 0], self.goal_pos[:, 1], 1] = 255
 
         return state_img
 
