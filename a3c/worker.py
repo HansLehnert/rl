@@ -3,8 +3,6 @@ import collections
 import numpy as np
 import tensorflow as tf
 
-import estimators
-
 Transition = collections.namedtuple(
     'Transition',
     ['state', 'action', 'reward', 'value', 'next_state', 'done'])
@@ -12,7 +10,7 @@ Transition = collections.namedtuple(
 
 class AC_Worker():
     def __init__(
-            self, name, env, global_net, optimizer,
+            self, name, env, global_net, local_net, optimizer,
             discount_factor=0.99,
             saver=None,
             checkpoint_dir=None,
@@ -25,8 +23,7 @@ class AC_Worker():
         self.summary_writer = summary_writer
         self.checkpoint_dir = checkpoint_dir
 
-        self.net = estimators.AC_Network(
-            self.name, len(self.env.ACTIONS), global_net, optimizer)
+        self.net = local_net
 
         self.global_step = tf.train.get_or_create_global_step()
 
@@ -61,8 +58,7 @@ class AC_Worker():
                         ],
                         feed_dict={
                             self.net.input: [state],
-                            self.net.rnn_state_in[0]: rnn_state[0],
-                            self.net.rnn_state_in[1]: rnn_state[1],
+                            **dict(zip(self.net.rnn_state_in, rnn_state))
                         }
                     )
 
@@ -96,8 +92,7 @@ class AC_Worker():
                         else:
                             feed_dict = {
                                 self.net.input: [transitions[-1].next_state],
-                                self.net.rnn_state_in[0]: rnn_state[0],
-                                self.net.rnn_state_in[1]: rnn_state[1],
+                                **dict(zip(self.net.rnn_state_in, rnn_state))
                             }
 
                             bootstrap_value = sess.run(
@@ -172,8 +167,7 @@ class AC_Worker():
                 self.net.target_value: target_values,
                 self.net.actions: actions,
                 self.net.input: states,
-                self.net.rnn_state_in[0]: rnn_state[0],
-                self.net.rnn_state_in[1]: rnn_state[1],
+                **dict(zip(self.net.rnn_state_in, rnn_state))
             }
         )
 
@@ -187,7 +181,6 @@ class AC_Worker():
 
         # Write summaries
         if self.summary_writer is not None:
-            mean_reward = np.mean(np.array([x.reward for x in transitions]))
             mean_value = np.mean(np.array([x.value for x in transitions]))
             mean_policy = np.mean(results[4])
 
