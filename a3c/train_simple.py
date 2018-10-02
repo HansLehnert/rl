@@ -24,9 +24,6 @@ class Network(estimators.AC_Network):
 
         self.shared_output = tf.expand_dims(dense1, 0)
 
-        # RNN isn't used
-
-
 
 # Parse arguments
 parser = argparse.ArgumentParser()

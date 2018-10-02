@@ -6,6 +6,13 @@ class AC_Network():
         self.name = name
         self.optimizer = optimizer
 
+        # Empty RNN states definitions for networks that don't use RNN
+        # NOTE: Move to get function?
+        self.rnn_initial_state = []
+        self.rnn_state_in = []
+        self.rnn_state_out = []
+
+        # Create network
         with tf.variable_scope(self.name):
             self._create_shared_network()
             self._create_ac_network(n_out)
@@ -13,12 +20,6 @@ class AC_Network():
             if global_net is not None:
                 self._create_update_op(n_out, global_net)
                 self._create_copy_op(global_net)
-
-        # Empty RNN states definitions for networks that don't use RNN
-        # NOTE: Move to get function?
-        self.rnn_initial_state = []
-        self.rnn_state_in = []
-        self.rnn_state_out = []
 
     def _create_shared_network(self):
         """Defines input processing part of the network.
