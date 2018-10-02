@@ -14,6 +14,12 @@ class AC_Network():
                 self._create_update_op(n_out, global_net)
                 self._create_copy_op(global_net)
 
+        # Empty RNN states definitions for networks that don't use RNN
+        # NOTE: Move to get function?
+        self.rnn_initial_state = []
+        self.rnn_state_in = []
+        self.rnn_state_out = []
+
     def _create_shared_network(self):
         """Defines input processing part of the network.
 
@@ -22,20 +28,18 @@ class AC_Network():
         # Image input
         # TODO: Allow size configuration
         self.input = tf.placeholder(
-            shape=[None, 8, 8, 3], dtype=tf.uint8, name='input_')
+            shape=[None, 64, 64, 3], dtype=tf.uint8, name='input_')
 
         input_normalized = tf.to_float(self.input) / 255.0
 
         # Convolutional layers
-        # conv1 = tf.layers.conv2d(
-        #     input_normalized, 16, 8, 4, activation=tf.nn.relu, name='conv1')
-        # conv2 = tf.layers.conv2d(
-        #     conv1, 32, 4, 2, activation=tf.nn.relu, name='conv2')
+        conv1 = tf.layers.conv2d(
+            input_normalized, 16, 8, 4, activation=tf.nn.relu, name='conv1')
+        conv2 = tf.layers.conv2d(
+            conv1, 32, 4, 2, activation=tf.nn.relu, name='conv2')
 
         # Fully connected layer
-        # dense1 = tf.layers.dense(tf.layers.flatten(conv2), 256, name="fc1")
-        dense1 = tf.layers.dense(
-            tf.layers.flatten(input_normalized), 256, name="fc1")
+        dense1 = tf.layers.dense(tf.layers.flatten(conv2), 256, name="fc1")
 
         # LSTM
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(256)
@@ -54,10 +58,11 @@ class AC_Network():
         )
         self.rnn_state_out = lstm_state
 
-        # self.shared_output = lstm_out
-        self.shared_output = tf.expand_dims(dense1, 0)
+        self.shared_output = lstm_out
 
     def _create_ac_network(self, n_out):
+        """Create network layers for policy and value outputs."""
+
         self.policy = tf.layers.dense(
             inputs=self.shared_output,
             units=n_out,
@@ -69,6 +74,8 @@ class AC_Network():
             inputs=self.shared_output, units=1, name='value')
 
     def _create_update_op(self, n_out, global_net):
+        """Create training operations."""
+
         self.actions = tf.placeholder(
             shape=[None], dtype=tf.int32, name='actions')
         self.target_value = tf.placeholder(
@@ -98,9 +105,6 @@ class AC_Network():
             tf.GraphKeys.TRAINABLE_VARIABLES, self.name)
         self.gradients = self.optimizer.compute_gradients(
             self.loss, local_vars)
-        # self.gradients = tf.gradients(self.loss, local_vars)
-        # self.var_norms = tf.global_norm(local_vars)
-        # grads, self.grad_norms = tf.clip_by_global_norm(self.gradients, 40.0)
 
         # Apply local gradients to global network
         global_vars = tf.get_collection(
@@ -109,6 +113,8 @@ class AC_Network():
         self.apply_grads = self.optimizer.apply_gradients(grads_and_vars)
 
     def _create_copy_op(self, global_net):
+        """Create operation to copy variables from global network."""
+
         local_vars = tf.get_collection(
             tf.GraphKeys.TRAINABLE_VARIABLES, self.name)
         global_vars = tf.get_collection(
