@@ -2,9 +2,12 @@ import tensorflow as tf
 
 
 class AC_Network():
-    def __init__(self, name, n_out, global_net=None, optimizer=None):
+    def __init__(
+            self, name, n_out, global_net=None, optimizer=None,
+            add_summary=False):
         self.name = name
         self.optimizer = optimizer
+        self.add_summary = add_summary
 
         # Empty RNN states definitions for networks that don't use RNN
         # NOTE: Move to get function?
@@ -13,13 +16,18 @@ class AC_Network():
         self.rnn_state_out = []
 
         # Create network
-        with tf.variable_scope(self.name):
+        with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
             self._create_shared_network()
             self._create_ac_network(n_out)
 
             if global_net is not None:
                 self._create_update_op(n_out, global_net)
                 self._create_copy_op(global_net)
+
+            self.summaries = tf.summary.merge_all(
+                tf.GraphKeys.SUMMARIES, self.name)
+            if self.summaries is None:
+                self.summaries = tf.no_op()
 
     def _create_shared_network(self):
         """Defines input processing part of the network.
@@ -29,15 +37,15 @@ class AC_Network():
         # Image input
         # TODO: Allow size configuration
         self.input = tf.placeholder(
-            shape=[None, 64, 64, 3], dtype=tf.uint8, name='input_')
+            shape=[None, 84, 84, 3], dtype=tf.uint8, name='input_')
 
         input_normalized = tf.to_float(self.input) / 255.0
 
         # Convolutional layers
         conv1 = tf.layers.conv2d(
-            input_normalized, 16, 8, 4, activation=tf.nn.relu, name='conv1')
+            input_normalized, 16, 8, 4, activation=tf.nn.elu, name='conv1')
         conv2 = tf.layers.conv2d(
-            conv1, 32, 4, 2, activation=tf.nn.relu, name='conv2')
+            conv1, 32, 4, 2, activation=tf.nn.elu, name='conv2')
 
         # Fully connected layer
         dense1 = tf.layers.dense(tf.layers.flatten(conv2), 256, name="fc1")
@@ -60,6 +68,35 @@ class AC_Network():
         self.rnn_state_out = lstm_state
 
         self.shared_output = lstm_out
+        # self.shared_output = tf.expand_dims(dense1, 0)
+
+        # Create summaries
+        if self.add_summary:
+            # Weights
+            conv1_kernel = tf.transpose(
+                tf.get_variable('conv1/kernel'), [3, 0, 1, 2])
+            tf.summary.scalar(
+                'Weights/Conv1', tf.reduce_sum(tf.abs(conv1_kernel)))
+            tf.summary.image('Kernel/Conv1', conv1_kernel, max_outputs=20)
+
+            conv2_kernel = tf.get_variable('conv2/kernel')
+            tf.summary.scalar(
+                'Weights/Conv2', tf.reduce_sum(tf.abs(conv2_kernel)))
+
+            dense1_kernel = tf.get_variable('fc1/kernel')
+            tf.summary.scalar(
+                'Weights/Dense', tf.reduce_sum(tf.abs(dense1_kernel)))
+
+            # Activations
+            # activation_vars = [
+            #     (conv1, 'Conv1'), (conv1, 'Conv2'), (dense1, 'Dense')
+            # ]
+            # for tensor, name in activation_vars:
+            #     zero = tf.constant(0, dtype=tf.float32)
+            #     activation = tf.cast(tf.not_equal(tensor, zero), tf.float32)
+            #     activation = tf.reduce_sum(activation)
+            #     activation /= tf.cast(tf.size(tensor), tf.float32)
+            #     tf.summary.scalar('Activation/{}'.format(name), activation)
 
     def _create_ac_network(self, n_out):
         """Create network layers for policy and value outputs."""
@@ -98,19 +135,22 @@ class AC_Network():
         self.loss = (
             0.5 * self.value_loss
             - self.policy_loss
-            - 0.01 * self.entropy_loss
+            - 0.0005 * self.entropy_loss
         )
 
         # Get gradients from local network using local losses
         local_vars = tf.get_collection(
             tf.GraphKeys.TRAINABLE_VARIABLES, self.name)
-        self.gradients = self.optimizer.compute_gradients(
+        gradients = self.optimizer.compute_gradients(
             self.loss, local_vars)
+        gradients = [g[0] for g in gradients]
+        clipped_gradients, self.gradient_norm = tf.clip_by_global_norm(
+            gradients, 50)
 
         # Apply local gradients to global network
         global_vars = tf.get_collection(
             tf.GraphKeys.TRAINABLE_VARIABLES, global_net.name)
-        grads_and_vars = zip([x[0] for x in self.gradients], global_vars)
+        grads_and_vars = zip(clipped_gradients, global_vars)
         self.apply_grads = self.optimizer.apply_gradients(grads_and_vars)
 
     def _create_copy_op(self, global_net):

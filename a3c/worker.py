@@ -77,7 +77,7 @@ class AC_Worker():
                     episode_total_reward += reward
                     if reward > 0:
                         episode_positive_reward += reward
-                        print('{}: {}'.format(self.name, reward))
+                        # print('{}: {}'.format(self.name, reward))
                     else:
                         episode_negative_reward += reward
 
@@ -160,6 +160,8 @@ class AC_Worker():
                 self.net.entropy_loss,
                 self.net.loss,
                 self.net.selected_policy,
+                self.net.gradient_norm,
+                self.net.summaries,
                 self.net.apply_grads,
             ],
             feed_dict={
@@ -181,6 +183,9 @@ class AC_Worker():
 
         # Write summaries
         if self.summary_writer is not None:
+            if results[6] is not None:
+                self.summary_writer.add_summary(results[6], global_step)
+
             mean_value = np.mean(np.array([x.value for x in transitions]))
             mean_policy = np.mean(results[4])
 
@@ -191,6 +196,7 @@ class AC_Worker():
             summary.value.add(tag='Loss/Policy', simple_value=results[1])
             summary.value.add(tag='Loss/Entropy', simple_value=results[2])
             summary.value.add(tag='Loss/Total', simple_value=results[3])
+            summary.value.add(tag='Norm/Gradient', simple_value=results[5])
 
             self.summary_writer.add_summary(summary, global_step)
             self.summary_writer.flush()
