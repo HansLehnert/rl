@@ -22,7 +22,26 @@ class Network(estimators.AC_Network):
         dense1 = tf.layers.dense(
             tf.layers.flatten(input_normalized), 256, name="fc1")
 
-        self.shared_output = tf.expand_dims(dense1, 0)
+        # LSTM
+        lstm_cell = tf.contrib.rnn.BasicLSTMCell(256)
+        self.rnn_initial_state = lstm_cell.zero_state(1, tf.float32)
+        self.rnn_state_in = (
+            tf.placeholder(
+                tf.float32, self.rnn_initial_state.c.shape, name='rnn_c'),
+            tf.placeholder(
+                tf.float32, self.rnn_initial_state.h.shape, name='rnn_h')
+        )
+        lstm_out, lstm_state = tf.nn.dynamic_rnn(
+            cell=lstm_cell,
+            inputs=tf.expand_dims(dense1, 0),
+            initial_state=tf.contrib.rnn.LSTMStateTuple(*self.rnn_state_in),
+            scope='lstm1'
+        )
+        self.rnn_state_out = lstm_state
+
+        self.shared_output = lstm_out
+
+        # self.shared_output = tf.expand_dims(dense1, 0)
 
 
 # Parse arguments

@@ -12,7 +12,7 @@ class SimpleEnvironment():
         # 'STRAFE_RIGHT'
     )
 
-    def __init__(self, plot=False, max_steps=100, n_goals=1):
+    def __init__(self, plot=False, max_steps=400, n_goals=1):
         self.max_steps = max_steps
         self.n_goals = n_goals
 
@@ -28,6 +28,11 @@ class SimpleEnvironment():
     def reset(self):
         self.player_pos = np.random.randint(0, self.size, (2,))
         self.goal_pos = np.random.randint(0, self.size, (self.n_goals, 2))
+        # self.hazard_pos = np.random.randint(0, self.size, (2,))
+
+        colors = [0, 1]
+        np.random.shuffle(colors)
+        self.player_color, self.goal_color = colors
 
         self.last_reward = 0
         self.t = 0
@@ -48,15 +53,18 @@ class SimpleEnvironment():
         for i in range(self.player_pos.size):
             if self.player_pos[i] < 0:
                 self.player_pos[i] = 0
-                self.last_reward = -1
+                # self.last_reward = -1
             elif self.player_pos[i] >= self.size:
                 self.player_pos[i] = self.size - 1
-                self.last_reward = -1
+                # self.last_reward = -1
 
         # Check if player arrived at goal:
+        # if np.all(self.player_pos == self.hazard_pos):
+        #     self.last_reward = -1
+        #     self.hazard_pos = np.random.randint(0, self.size, (2,))
         for i in range(self.n_goals):
             if np.all(self.player_pos == self.goal_pos[i]):
-                self.last_reward = 5
+                self.last_reward = 1
                 self.goal_pos[i] = np.random.randint(0, self.size, (2,))
 
         self.t += 1
@@ -69,8 +77,10 @@ class SimpleEnvironment():
     def state(self):
         state_img = np.zeros((self.size, self.size, 3), dtype=np.uint8)
 
-        state_img[self.player_pos[0], self.player_pos[1], 0] = 255
-        state_img[self.goal_pos[:, 0], self.goal_pos[:, 1], 1] = 255
+        state_img[
+            self.player_pos[0], self.player_pos[1], self.goal_color] = 255
+        state_img[
+            self.goal_pos[:, 0], self.goal_pos[:, 1], self.player_color] = 255
 
         return state_img
 
