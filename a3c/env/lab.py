@@ -21,13 +21,13 @@ class LabEnvironment():
         self.lab = deepmind_lab.Lab(
             level,
             ['RGB_INTERLEAVED'],
-            {'fps': '30', 'width': '64', 'height': '64'}
+            {'fps': '30', 'width': '84', 'height': '84'}
         )
 
         self.plot = plot
         if self.plot:
             plt.figure()
-            self.viewport = plt.imshow(np.zeros((64, 64)))
+            self.viewport = plt.imshow(np.zeros((84, 84)))
             plt.show(block=False)
 
         self.reset()
@@ -45,9 +45,9 @@ class LabEnvironment():
         elif action == 'MOVE_BACKWARD':
             action_vec[3] = -1
         elif action == 'LOOK_LEFT':
-            action_vec[0] = -20
+            action_vec[0] = -15
         elif action == 'LOOK_RIGHT':
-            action_vec[0] = 20
+            action_vec[0] = 15
         elif action == 'STRAFE_LEFT':
             action_vec[2] = -1
         elif action == 'STRAFE_RIGHT':
@@ -67,7 +67,7 @@ class LabEnvironment():
         return self.observations['RGB_INTERLEAVED']
 
     def reward(self):
-        return self.last_reward
+        return np.clip(self.last_reward, -1, 1)
 
     def done(self):
         return not self.lab.is_running()
