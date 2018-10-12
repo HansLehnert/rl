@@ -39,7 +39,7 @@ class AC_Network():
         self.input = tf.placeholder(
             shape=[None, 84, 84, 3], dtype=tf.uint8, name='input_')
 
-        input_normalized = tf.to_float(self.input) / 255.0
+        input_normalized = tf.to_float(self.input) * 2 / 255.0 - 1
 
         # Convolutional layers
         conv1 = tf.layers.conv2d(
@@ -48,7 +48,8 @@ class AC_Network():
             conv1, 32, 4, 2, activation=tf.nn.elu, name='conv2')
 
         # Fully connected layer
-        dense1 = tf.layers.dense(tf.layers.flatten(conv2), 256, name="fc1")
+        dense1 = tf.layers.dense(
+            tf.layers.flatten(conv2), 256, name="fc1", activation=tf.nn.elu)
 
         # LSTM
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(256)
@@ -77,7 +78,8 @@ class AC_Network():
                 tf.get_variable('conv1/kernel'), [3, 0, 1, 2])
             tf.summary.scalar(
                 'Weights/Conv1', tf.reduce_sum(tf.abs(conv1_kernel)))
-            tf.summary.image('Kernel/Conv1', conv1_kernel, max_outputs=20)
+            tf.summary.image(
+                'Kernel/Conv1', conv1_kernel, max_outputs=20)
 
             conv2_kernel = tf.get_variable('conv2/kernel')
             tf.summary.scalar(
@@ -88,15 +90,15 @@ class AC_Network():
                 'Weights/Dense', tf.reduce_sum(tf.abs(dense1_kernel)))
 
             # Activations
-            # activation_vars = [
-            #     (conv1, 'Conv1'), (conv1, 'Conv2'), (dense1, 'Dense')
-            # ]
-            # for tensor, name in activation_vars:
-            #     zero = tf.constant(0, dtype=tf.float32)
-            #     activation = tf.cast(tf.not_equal(tensor, zero), tf.float32)
-            #     activation = tf.reduce_sum(activation)
-            #     activation /= tf.cast(tf.size(tensor), tf.float32)
-            #     tf.summary.scalar('Activation/{}'.format(name), activation)
+            activation_vars = [
+                (conv1, 'Conv1'), (conv1, 'Conv2'), (dense1, 'Dense')
+            ]
+            for tensor, name in activation_vars:
+                zero = tf.constant(0, dtype=tf.float32)
+                activation = tf.cast(tf.less_equal(tensor, zero), tf.float32)
+                activation = tf.reduce_sum(activation)
+                activation /= tf.cast(tf.size(tensor), tf.float32)
+                tf.summary.scalar('Zeros/{}'.format(name), activation)
 
     def _create_ac_network(self, n_out):
         """Create network layers for policy and value outputs."""
@@ -127,15 +129,15 @@ class AC_Network():
         self.selected_policy = responsible_outputs
 
         # Loss functions
-        self.value_loss = tf.reduce_sum(
+        self.value_loss = tf.reduce_mean(
             tf.square(self.target_value - tf.reshape(self.value, [-1])))
-        self.entropy_loss = -tf.reduce_sum(self.policy * tf.log(self.policy))
-        self.policy_loss = tf.reduce_sum(
+        self.entropy_loss = -tf.reduce_mean(self.policy * tf.log(self.policy))
+        self.policy_loss = tf.reduce_mean(
             tf.log(responsible_outputs) * self.advantages)
         self.loss = (
             0.5 * self.value_loss
             - self.policy_loss
-            - 0.0005 * self.entropy_loss
+            - 0.00005 * self.entropy_loss
         )
 
         # Get gradients from local network using local losses
