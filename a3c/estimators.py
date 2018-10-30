@@ -1,10 +1,9 @@
 import tensorflow as tf
 
 
-class AC_Network():
+class AC_Network:
     def __init__(
-            self, name, n_out, global_net=None, optimizer=None,
-            add_summary=False):
+            self, name, n_out, optimizer, add_summary=False, **kwargs):
         self.name = name
         self.optimizer = optimizer
         self.add_summary = add_summary
@@ -19,10 +18,7 @@ class AC_Network():
         with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
             self._create_shared_network()
             self._create_ac_network(n_out)
-
-            if global_net is not None:
-                self._create_update_op(n_out, global_net)
-                self._create_copy_op(global_net)
+            self._create_gradient_op(n_out)
 
             self.summaries = tf.summary.merge_all(
                 tf.GraphKeys.SUMMARIES, self.name)
@@ -113,7 +109,7 @@ class AC_Network():
         self.value = tf.layers.dense(
             inputs=self.shared_output, units=1, name='value')
 
-    def _create_update_op(self, n_out, global_net):
+    def _create_gradient_op(self, n_out):
         """Create training operations."""
 
         self.actions = tf.placeholder(
@@ -141,29 +137,27 @@ class AC_Network():
         )
 
         # Get gradients from local network using local losses
-        local_vars = tf.get_collection(
+        self.local_vars = tf.get_collection(
             tf.GraphKeys.TRAINABLE_VARIABLES, self.name)
         gradients = self.optimizer.compute_gradients(
-            self.loss, local_vars)
+            self.loss, self.local_vars)
         gradients = [g[0] for g in gradients]
-        clipped_gradients, self.gradient_norm = tf.clip_by_global_norm(
+        self.gradients_out, self.gradient_norm = tf.clip_by_global_norm(
             gradients, 50)
 
-        # Apply local gradients to global network
-        global_vars = tf.get_collection(
-            tf.GraphKeys.TRAINABLE_VARIABLES, global_net.name)
-        grads_and_vars = zip(clipped_gradients, global_vars)
-        self.apply_grads = self.optimizer.apply_gradients(grads_and_vars)
+        self.gradients_in = []
+        for tensor in self.gradients_out:
+            self.gradients_in.append(
+                tf.placeholder(tensor.dtype, tensor.shape))
 
-    def _create_copy_op(self, global_net):
-        """Create operation to copy variables from global network."""
+        self.apply_gradients = self.optimizer.apply_gradients(
+            zip(self.gradients_in, self.local_vars))
 
-        local_vars = tf.get_collection(
-            tf.GraphKeys.TRAINABLE_VARIABLES, self.name)
-        global_vars = tf.get_collection(
-            tf.GraphKeys.TRAINABLE_VARIABLES, global_net.name)
-
-        self.copy_params = []
-        for local_var, global_var in zip(local_vars, global_vars):
-            assign = local_var.assign(global_var)
-            self.copy_params.append(assign)
+        # Load global variables
+        self.assign = []
+        self.vars_in = []
+        for var in self.local_vars:
+            placeholder = tf.placeholder(var.dtype, var.shape)
+            assign_op = tf.assign(var, placeholder)
+            self.vars_in.append(placeholder)
+            self.assign.append(assign_op)
