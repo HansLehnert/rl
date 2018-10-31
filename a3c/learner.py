@@ -4,10 +4,14 @@ import os.path
 
 
 class Learner:
-    def __init__(self, net, param_queue, grad_queue, model_dir, **kwargs):
+    def __init__(
+            self, net, param_queue, grad_queue, model_dir, learn=True, **kwargs
+    ):
         self.param_queue = param_queue
         self.grad_queue = grad_queue
         self.net = net
+        self.learn = learn
+
         self.model_dir = model_dir
         self.summary_dir = os.path.join(model_dir, 'learner')
 
@@ -34,33 +38,37 @@ class Learner:
             print('Restored checkpoint {}'.format(latest_checkpoint))
 
         # Create summary writer
-        self.summary_writer = tf.summary.FileWriter(self.summary_dir)
-        self.summary_writer.add_graph(self.session.graph)
+        if self.summary_dir is not None and self.learn:
+            self.summary_writer = tf.summary.FileWriter(self.summary_dir)
+            self.summary_writer.add_graph(self.session.graph)
+        else:
+            self.summary_writer = None
 
         # Send the initial parameters to the worker threads
         local_vars = self.session.run(self.net.local_vars)
         for i in range(n_workers):
-            self.param_queue.put(local_vars)
+            self.param_queue.put((0, local_vars))
 
         # Update loop
         while True:
+            step = self.session.run(self.increase_global_step)
+
             # Get grads
             grads = self.grad_queue.get()
 
             # Update network
-            self.session.run(
-                self.net.apply_gradients,
-                dict(zip(self.net.gradients_in, grads))
-            )
+            if self.learn:
+                self.session.run(
+                    self.net.apply_gradients,
+                    dict(zip(self.net.gradients_in, grads))
+                )
 
-            # Sen paramenters back
+            # Send parameters back
             local_vars = self.session.run(self.net.local_vars)
-            self.param_queue.put(local_vars)
-
-            step = self.session.run(self.increase_global_step)
+            self.param_queue.put((step, local_vars))
 
             # Save model
-            if step % 100 == 0:
+            if self.learn and step % 1000 == 0:
                 print('Saving checkpoint on step {}'.format(step))
                 self.saver.save(self.session, self.model_dir, global_step=step)
 
@@ -71,7 +79,7 @@ class Learner:
                     summary = tf.Summary()
                     summary.value.add(
                         tag='Info/StepsPerMinute',
-                        simple_value=(100 / elapsed_time * 60)
+                        simple_value=(1000 / elapsed_time * 60)
                     )
 
                     self.summary_writer.add_summary(summary, step)

@@ -1,4 +1,5 @@
 import collections
+import os.path
 import numpy as np
 import tensorflow as tf
 
@@ -10,33 +11,37 @@ Transition = collections.namedtuple(
 class AC_Worker:
     def __init__(
             self, name, net, env_class, env_params, param_queue, grad_queue,
-            discount_factor=0.99, summary_writer=None, **kwargs
+            discount_factor=0.99, model_dir=None, **kwargs
     ):
         self.name = name
         self.param_queue = param_queue
         self.grad_queue = grad_queue
         self.discount_factor = discount_factor
-        self.summary_writer = summary_writer
+        self.model_dir = model_dir
 
         self.env_class = env_class
         self.env_params = env_params
         self.net = net
 
+        self._step = 0
+
     def run(self, max_steps):
         # Create environemnt
         self.env = self.env_class(**(self.env_params))
+
+        # Create summary writer
+        if self.model_dir is not None:
+            summary_dir = os.path.join(self.model_dir, self.name)
+            self.summary_writer = tf.summary.FileWriter(summary_dir)
+        else:
+            self.summary_writer = None
 
         # Create session
         session_config = tf.ConfigProto()
         session_config.gpu_options.allow_growth = True
 
         self.session = tf.Session(config=session_config)
-        self.global_step = tf.train.get_or_create_global_step()
         self.session.run(tf.global_variables_initializer())
-
-        with tf.variable_scope(self.name, auxiliary_name_scope=False):
-            self.increase_global_step = tf.assign_add(
-                tf.train.get_global_step(), 1)
 
         self.update_vars()
 
@@ -118,8 +123,6 @@ class AC_Worker:
 
             # Log episode data
             if self.summary_writer is not None:
-                global_step = self.session.run(self.global_step)
-
                 summary = tf.Summary()
                 summary.value.add(
                     tag='Perf/RewardTotal',
@@ -134,7 +137,7 @@ class AC_Worker:
                     simple_value=episode_negative_reward
                 )
 
-                self.summary_writer.add_summary(summary, global_step)
+                self.summary_writer.add_summary(summary, self._step)
                 self.summary_writer.flush()
 
     def train(self, transitions, bootstrap_value, rnn_state):
@@ -155,8 +158,11 @@ class AC_Worker:
         target_values.reverse()
         advantages.reverse()
 
-        results = self.session.run(
-            self.net.gradients_out,
+        gradients, summaries = self.session.run(
+            fetches=[
+                self.net.gradients_out,
+                self.net.summaries
+            ],
             # fetches=[
             #     # self.net.value_loss,
             #     # self.net.policy_loss,
@@ -176,32 +182,26 @@ class AC_Worker:
             }
         )
 
-        global_step = self.session.run(self.increase_global_step)
-
-        self.grad_queue.put(results)
+        self.grad_queue.put(gradients)
 
         # Write summaries
-        # if self.summary_writer is not None:
-        #     if results[6] is not None:
-        #         self.summary_writer.add_summary(results[6], global_step)
+        if self.summary_writer is not None:
+            if summaries is not None:
+                self.summary_writer.add_summary(summaries, self._step)
 
-        #     mean_value = np.mean(np.array([x.value for x in transitions]))
-        #     mean_policy = np.mean(results[4])
+            # mean_value = np.mean(np.array([x.value for x in transitions]))
+            # mean_policy = np.mean(results[4])
 
-        #     summary = tf.Summary()
-        #     summary.value.add(tag='Perf/Value', simple_value=mean_value)
-        #     summary.value.add(tag='Perf/Policy', simple_value=mean_policy)
-        #     summary.value.add(tag='Loss/Value', simple_value=results[0])
-        #     summary.value.add(tag='Loss/Policy', simple_value=results[1])
-        #     summary.value.add(tag='Loss/Entropy', simple_value=results[2])
-        #     summary.value.add(tag='Loss/Total', simple_value=results[3])
-        #     summary.value.add(tag='Norm/Gradient', simple_value=results[5])
+            # summary = tf.Summary()
+            # summary.value.add(tag='Perf/Value', simple_value=mean_value)
+            # summary.value.add(tag='Perf/Policy', simple_value=mean_policy)
+            # summary.value.add(tag='Norm/Gradient', simple_value=results[5])
+            # self.summary_writer.add_summary(summary, global_step)
 
-        #     self.summary_writer.add_summary(summary, global_step)
-        #     self.summary_writer.flush()
+            self.summary_writer.flush()
 
     def update_vars(self):
-        params = self.param_queue.get()
+        self._step, params = self.param_queue.get()
 
         self.session.run(
             self.net.assign,

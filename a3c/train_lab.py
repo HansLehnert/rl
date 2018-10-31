@@ -18,15 +18,19 @@ parser.add_argument('--model_dir', default='./model_lab/')
 parser.add_argument('--t_max', type=int, default=100)
 parser.add_argument('-n', type=int)
 parser.add_argument('--viewport', action='store_true')
+parser.add_argument('--test', action='store_true')
 args = parser.parse_args(sys.argv[1:])
 
 model_dir = args.model_dir
 checkpoint_dir = os.path.join(model_dir, 'checkpoint')
 
 # Set the number of workers
-n_workers = args.n
-if n_workers is None:
-    n_workers = multiprocessing.cpu_count() - 1
+if args.test:
+    n_workers = 1
+else:
+    n_workers = args.n
+    if n_workers is None:
+        n_workers = multiprocessing.cpu_count() - 1
 
 # Multiprocess queues
 parameter_queue = multiprocessing.Queue()
@@ -39,7 +43,7 @@ if True:
         1e-5, 0.99, 0.95, 1e-2, use_locking=True)
 
     # Global network, to be updated by worker threads
-    net = estimators.AC_Network('global', len(Environment.ACTIONS), optimizer)
+    net = estimators.AC_Network(len(Environment.ACTIONS), optimizer)
 
     # Create workers graphs
     workers = []
@@ -47,10 +51,11 @@ if True:
         worker_name = 'worker_{}'.format(worker_id)
 
         enable_viewport = False
-        # worker_summary = None
+        worker_summary = None
         if worker_id == 0:
             enable_viewport = args.viewport
-            # worker_summary = summary_writer
+            if not args.test:
+                worker_summary = model_dir
 
         worker = AC_Worker(
             name=worker_name,
@@ -62,9 +67,9 @@ if True:
             net=net,
             param_queue=parameter_queue,
             grad_queue=gradient_queue,
+            model_dir=worker_summary,
         )
         workers.append(worker)
-
 
     # coord = tf.train.Coordinator()
 
@@ -76,7 +81,8 @@ if True:
         process.start()
         worker_threads.append(process)
 
-    learner = Learner(net, parameter_queue, gradient_queue, model_dir)
+    learner = Learner(
+        net, parameter_queue, gradient_queue, model_dir, learn=(not args.test))
     learner.run(len(worker_threads))
 
     # Wait for all workers to finish

@@ -3,7 +3,7 @@ import tensorflow as tf
 
 class AC_Network:
     def __init__(
-            self, name, n_out, optimizer, add_summary=False, **kwargs):
+            self, n_out, optimizer, name='', add_summary=True, **kwargs):
         self.name = name
         self.optimizer = optimizer
         self.add_summary = add_summary
@@ -15,7 +15,7 @@ class AC_Network:
         self.rnn_state_out = []
 
         # Create network
-        with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
+        with tf.variable_scope(self.name, '', reuse=tf.AUTO_REUSE):
             self._create_shared_network()
             self._create_ac_network(n_out)
             self._create_gradient_op(n_out)
@@ -72,29 +72,29 @@ class AC_Network:
             # Weights
             conv1_kernel = tf.transpose(
                 tf.get_variable('conv1/kernel'), [3, 0, 1, 2])
-            tf.summary.scalar(
-                'Weights/Conv1', tf.reduce_sum(tf.abs(conv1_kernel)))
-            tf.summary.image(
-                'Kernel/Conv1', conv1_kernel, max_outputs=20)
+            tf.summary.image('Kernel/Conv1', conv1_kernel, max_outputs=16)
 
-            conv2_kernel = tf.get_variable('conv2/kernel')
-            tf.summary.scalar(
-                'Weights/Conv2', tf.reduce_sum(tf.abs(conv2_kernel)))
+            # tf.summary.scalar(
+            #     'Weights/Conv1', tf.reduce_sum(tf.abs(conv1_kernel)))
 
-            dense1_kernel = tf.get_variable('fc1/kernel')
-            tf.summary.scalar(
-                'Weights/Dense', tf.reduce_sum(tf.abs(dense1_kernel)))
+            # conv2_kernel = tf.get_variable('conv2/kernel')
+            # tf.summary.scalar(
+            #     'Weights/Conv2', tf.reduce_sum(tf.abs(conv2_kernel)))
 
-            # Activations
-            activation_vars = [
-                (conv1, 'Conv1'), (conv1, 'Conv2'), (dense1, 'Dense')
-            ]
-            for tensor, name in activation_vars:
-                zero = tf.constant(0, dtype=tf.float32)
-                activation = tf.cast(tf.less_equal(tensor, zero), tf.float32)
-                activation = tf.reduce_sum(activation)
-                activation /= tf.cast(tf.size(tensor), tf.float32)
-                tf.summary.scalar('Zeros/{}'.format(name), activation)
+            # dense1_kernel = tf.get_variable('fc1/kernel')
+            # tf.summary.scalar(
+            #     'Weights/Dense', tf.reduce_sum(tf.abs(dense1_kernel)))
+
+            # # Activations
+            # activation_vars = [
+            #     (conv1, 'Conv1'), (conv1, 'Conv2'), (dense1, 'Dense')
+            # ]
+            # for tensor, name in activation_vars:
+            #     zero = tf.constant(0, dtype=tf.float32)
+            #     activation = tf.cast(tf.less_equal(tensor, zero), tf.float32)
+            #     activation = tf.reduce_sum(activation)
+            #     activation /= tf.cast(tf.size(tensor), tf.float32)
+            #     tf.summary.scalar('Zeros/{}'.format(name), activation)
 
     def _create_ac_network(self, n_out):
         """Create network layers for policy and value outputs."""
@@ -125,22 +125,21 @@ class AC_Network:
         self.selected_policy = responsible_outputs
 
         # Loss functions
-        self.value_loss = tf.reduce_mean(
+        value_loss = tf.reduce_mean(
             tf.square(self.target_value - tf.reshape(self.value, [-1])))
-        self.entropy_loss = -tf.reduce_mean(self.policy * tf.log(self.policy))
-        self.policy_loss = tf.reduce_mean(
+        entropy_loss = -tf.reduce_mean(self.policy * tf.log(self.policy))
+        policy_loss = tf.reduce_mean(
             tf.log(responsible_outputs) * self.advantages)
-        self.loss = (
-            0.5 * self.value_loss
-            - self.policy_loss
-            - 0.00005 * self.entropy_loss
+        loss = (
+            0.5 * value_loss
+            - policy_loss
+            - 0.0005 * entropy_loss
         )
 
         # Get gradients from local network using local losses
         self.local_vars = tf.get_collection(
             tf.GraphKeys.TRAINABLE_VARIABLES, self.name)
-        gradients = self.optimizer.compute_gradients(
-            self.loss, self.local_vars)
+        gradients = self.optimizer.compute_gradients(loss, self.local_vars)
         gradients = [g[0] for g in gradients]
         self.gradients_out, self.gradient_norm = tf.clip_by_global_norm(
             gradients, 50)
@@ -161,3 +160,14 @@ class AC_Network:
             assign_op = tf.assign(var, placeholder)
             self.vars_in.append(placeholder)
             self.assign.append(assign_op)
+
+        # Create summaries
+        if self.add_summary:
+            tf.summary.scalar('Loss/Value', value_loss,)
+            tf.summary.scalar('Loss/Policy', policy_loss,)
+            tf.summary.scalar('Loss/Entropy', entropy_loss,)
+            tf.summary.scalar('Loss/Total', loss,)
+
+            tf.summary.scalar('Perf/Value', tf.reduce_mean(self.value))
+            tf.summary.scalar(
+                'Perf/Policy', tf.reduce_mean(responsible_outputs))
