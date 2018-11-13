@@ -1,12 +1,19 @@
 import tensorflow as tf
+import numpy as np
 
 
 class AC_Network:
     def __init__(
-            self, n_out, optimizer, name='', add_summary=True, **kwargs):
+            self, n_out, optimizer, input_dim=None, name='', add_summary=True,
+            **kwargs):
         self.name = name
         self.optimizer = optimizer
         self.add_summary = add_summary
+
+        if input_dim is None:
+            self.input_dim = [84, 84, 3]
+        else:
+            self.input_dim = input_dim
 
         # Empty RNN states definitions for networks that don't use RNN
         # NOTE: Move to get function?
@@ -33,33 +40,59 @@ class AC_Network:
         # Image input
         # TODO: Allow size configuration
         self.input = tf.placeholder(
-            shape=[None, 84, 84, 3], dtype=tf.uint8, name='input_')
+            shape=[None, None] + self.input_dim, dtype=tf.uint8, name='input_')
+        input_shape = tf.shape(self.input)
+        batch_size = input_shape[0]
+        time_size = input_shape[1]
+        self.batch_size = batch_size
 
         input_normalized = tf.to_float(self.input) * 2 / 255.0 - 1
 
         # Convolutional layers
-        conv1 = tf.layers.conv2d(
-            input_normalized, 16, 8, 4, activation=tf.nn.elu, name='conv1')
-        conv2 = tf.layers.conv2d(
-            conv1, 32, 4, 2, activation=tf.nn.elu, name='conv2')
+        conv1 = tf.layers.conv3d(
+            inputs=input_normalized,
+            filters=16,
+            kernel_size=(1, 8, 8),
+            strides=(1, 4, 4),
+            activation=tf.nn.elu,
+            name='conv1'
+        )
+        conv2 = tf.layers.conv3d(
+            inputs=conv1,
+            filters=32,
+            kernel_size=(1, 4, 4),
+            strides=(1, 2, 2),
+            activation=tf.nn.elu,
+            name='conv2'
+        )
+
+        flattened_conv = tf.reshape(
+            tensor=conv2,
+            shape=[batch_size, time_size, np.prod(conv2.shape[2:])],
+            name='flatten'
+        )
 
         # Fully connected layer
-        dense1 = tf.layers.dense(
-            tf.layers.flatten(conv2), 256, name="fc1", activation=tf.nn.elu)
+        dense = tf.layers.dense(
+            flattened_conv, 256, name="fc1", activation=tf.nn.elu)
+        print(dense.shape)
+        self.dense = dense
 
         # LSTM
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(256)
+        lstm_state_size = lstm_cell.state_size
         self.rnn_initial_state = lstm_cell.zero_state(1, tf.float32)
         self.rnn_state_in = (
             tf.placeholder(
-                tf.float32, self.rnn_initial_state.c.shape, name='rnn_c'),
+                tf.float32, [None, lstm_state_size.c], name='rnn_c'),
             tf.placeholder(
-                tf.float32, self.rnn_initial_state.h.shape, name='rnn_h')
+                tf.float32, [None, lstm_state_size.h], name='rnn_h')
         )
+        initial_state = tf.contrib.rnn.LSTMStateTuple(*self.rnn_state_in)
         lstm_out, lstm_state = tf.nn.dynamic_rnn(
             cell=lstm_cell,
-            inputs=tf.expand_dims(dense1, 0),
-            initial_state=tf.contrib.rnn.LSTMStateTuple(*self.rnn_state_in),
+            inputs=dense,
+            initial_state=initial_state,
             scope='lstm1'
         )
         self.rnn_state_out = lstm_state
@@ -71,7 +104,7 @@ class AC_Network:
         if self.add_summary:
             # Weights
             conv1_kernel = tf.transpose(
-                tf.get_variable('conv1/kernel'), [3, 0, 1, 2])
+                tf.squeeze(tf.get_variable('conv1/kernel')), [3, 0, 1, 2])
             tf.summary.image('Kernel/Conv1', conv1_kernel, max_outputs=16)
 
             # tf.summary.scalar(
@@ -113,11 +146,11 @@ class AC_Network:
         """Create training operations."""
 
         self.actions = tf.placeholder(
-            shape=[None], dtype=tf.int32, name='actions')
+            shape=[None, None], dtype=tf.int32, name='actions')
         self.target_value = tf.placeholder(
-            shape=[None], dtype=tf.float32, name='target_value')
+            shape=[None, None], dtype=tf.float32, name='target_value')
         self.advantages = tf.placeholder(
-            shape=[None], dtype=tf.float32, name='advantages')
+            shape=[None, None], dtype=tf.float32, name='advantages')
 
         actions_onehot = tf.one_hot(self.actions, n_out, dtype=tf.float32)
 

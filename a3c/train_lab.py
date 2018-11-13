@@ -30,7 +30,7 @@ if args.test:
 else:
     n_workers = args.n
     if n_workers is None:
-        n_workers = multiprocessing.cpu_count() - 1
+        n_workers = multiprocessing.cpu_count()
 
 # Multiprocess queues
 parameter_queue = multiprocessing.Queue()
@@ -48,7 +48,7 @@ if True:
     # Create workers graphs
     workers = []
     for worker_id in range(n_workers):
-        worker_name = 'worker_{}'.format(worker_id)
+        worker_name = 'worker_{:02}'.format(worker_id)
 
         enable_viewport = False
         worker_summary = None
@@ -82,7 +82,13 @@ if True:
         worker_threads.append(process)
 
     learner = Learner(
-        net, parameter_queue, gradient_queue, model_dir, learn=(not args.test))
+        net,
+        parameter_queue,
+        gradient_queue,
+        model_dir,
+        10 ** 8,
+        learn=(not args.test)
+    )
     learner.run(len(worker_threads))
 
     # Wait for all workers to finish

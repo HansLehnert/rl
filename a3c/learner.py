@@ -5,11 +5,13 @@ import os.path
 
 class Learner:
     def __init__(
-            self, net, param_queue, grad_queue, model_dir, learn=True, **kwargs
+            self, net, param_queue, grad_queue, model_dir, max_steps,
+            learn=True, **kwargs
     ):
+        self.net = net
         self.param_queue = param_queue
         self.grad_queue = grad_queue
-        self.net = net
+        self.max_steps = max_steps
         self.learn = learn
 
         self.model_dir = model_dir
@@ -23,9 +25,17 @@ class Learner:
         session_config.gpu_options.allow_growth = True
 
         self.session = tf.Session(config=session_config)
-        self.global_step = tf.train.get_or_create_global_step()
+
+        # Step counters
+        self.global_step_counter = tf.train.get_or_create_global_step()
+        increase_global_step = self.global_step_counter.assign_add(1)
+
+        self.env_step_counter = tf.Variable(0, dtype=tf.int32, name='env_step')
+        env_step_increment = tf.placeholder(tf.int32)
+        increase_env_step = self.env_step_counter.assign_add(
+            env_step_increment)
+
         self.session.run(tf.global_variables_initializer())
-        self.increase_global_step = self.global_step.assign_add(1)
 
         # Load variables from checkpoint
         self.saver = tf.train.Saver(keep_checkpoint_every_n_hours=2.0)
@@ -36,6 +46,8 @@ class Learner:
             latest_checkpoint = tf.train.latest_checkpoint(self.model_dir)
             self.saver.restore(self.session, latest_checkpoint)
             print('Restored checkpoint {}'.format(latest_checkpoint))
+        step, env_step = self.session.run(
+            [self.global_step_counter, self.env_step_counter])
 
         # Create summary writer
         if self.summary_dir is not None and self.learn:
@@ -47,14 +59,16 @@ class Learner:
         # Send the initial parameters to the worker threads
         local_vars = self.session.run(self.net.local_vars)
         for i in range(n_workers):
-            self.param_queue.put((0, local_vars))
+            self.param_queue.put((step, local_vars))
 
         # Update loop
-        while True:
-            step = self.session.run(self.increase_global_step)
-
+        while env_step < self.max_steps:
             # Get grads
-            grads = self.grad_queue.get()
+            grads, grad_steps = self.grad_queue.get()
+
+            step = self.session.run(increase_global_step)
+            env_step = self.session.run(
+                increase_env_step, feed_dict={env_step_increment: grad_steps})
 
             # Update network
             if self.learn:
@@ -81,7 +95,14 @@ class Learner:
                         tag='Info/StepsPerMinute',
                         simple_value=(1000 / elapsed_time * 60)
                     )
+                    summary.value.add(
+                        tag='Info/EnvironmentSteps',
+                        simple_value=env_step
+                    )
 
                     self.summary_writer.add_summary(summary, step)
                     self.summary_writer.flush()
                 self.last_time = time
+
+        for i in range(n_workers):
+            self.param_queue.put('end')
