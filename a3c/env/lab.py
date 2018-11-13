@@ -9,8 +9,8 @@ class LabEnvironment():
         'MOVE_BACKWARD',
         'LOOK_LEFT',
         'LOOK_RIGHT',
-        # 'STRAFE_LEFT',
-        # 'STRAFE_RIGHT'
+        'STRAFE_LEFT',
+        'STRAFE_RIGHT'
     )
 
     def __init__(
