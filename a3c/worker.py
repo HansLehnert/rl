@@ -11,12 +11,13 @@ Transition = collections.namedtuple(
 class AC_Worker:
     def __init__(
             self, name, net, env_class, env_params, param_queue, grad_queue,
-            discount_factor=0.99, model_dir=None, **kwargs
+            discount_factor=0.99, batch_size=1, model_dir=None, **kwargs
     ):
         self.name = name
         self.param_queue = param_queue
         self.grad_queue = grad_queue
         self.discount_factor = discount_factor
+        self.batch_size = batch_size
         self.model_dir = model_dir
 
         self.env_class = env_class
@@ -45,6 +46,8 @@ class AC_Worker:
 
         self.update_vars()
 
+        batch = []
+
         while True:
             transitions = []
 
@@ -66,7 +69,7 @@ class AC_Worker:
                         self.net.rnn_state_out
                     ],
                     feed_dict={
-                        self.net.input: [state],
+                        self.net.input: [[state]],
                         **dict(zip(self.net.rnn_state_in, rnn_state))
                     }
                 )
@@ -86,7 +89,6 @@ class AC_Worker:
                 episode_total_reward += reward
                 if reward > 0:
                     episode_positive_reward += reward
-                    print('{}: {}'.format(self.name, reward))
                 else:
                     episode_negative_reward += reward
 
@@ -100,7 +102,7 @@ class AC_Worker:
                         bootstrap_value = 0
                     else:
                         feed_dict = {
-                            self.net.input: [transitions[-1].next_state],
+                            self.net.input: [[transitions[-1].next_state]],
                             **dict(zip(self.net.rnn_state_in, rnn_state))
                         }
 
@@ -110,16 +112,21 @@ class AC_Worker:
                         )
                         bootstrap_value = bootstrap_value[0, 0, 0]
 
-                    self.train(
-                        transitions,
-                        bootstrap_value,
-                        batch_rnn_state)
-
-                    self.update_vars()
+                    batch.append(
+                        (transitions, bootstrap_value, batch_rnn_state))
                     transitions = []
                     batch_rnn_state = rnn_state
 
+                    if len(batch) >= self.batch_size:
+                        self.train(batch)
+                        self.update_vars()
+
+                        batch = []
+
                 state = next_state
+
+            print('[{}] Episode Reward: {}'.format(
+                self.name, episode_total_reward))
 
             # Log episode data
             if self.summary_writer is not None:
@@ -140,67 +147,73 @@ class AC_Worker:
                 self.summary_writer.add_summary(summary, self._step)
                 self.summary_writer.flush()
 
-    def train(self, transitions, bootstrap_value, rnn_state):
-        reward = bootstrap_value
+    def train(self, batch):
+        total_steps = 0
 
-        target_values = []
-        advantages = []
-        actions = [x.action for x in transitions]
-        states = [x.state for x in transitions]
+        batch_target_values = []
+        batch_advantages = []
+        batch_actions = []
+        batch_states = []
+        batch_rnn_state = None
 
-        for transition in transitions[::-1]:
-            reward = transition.reward + self.discount_factor * reward
-            advantage = reward - transition.value
+        for transitions, bootstrap_value, rnn_state in batch:
+            total_steps += len(transitions)
 
-            target_values.append(reward)
-            advantages.append(advantage)
+            batch_actions.append([x.action for x in transitions])
+            batch_states.append([x.state for x in transitions])
 
-        target_values.reverse()
-        advantages.reverse()
+            reward = bootstrap_value
+
+            target_values = []
+            advantages = []
+
+            for transition in reversed(transitions):
+                reward = transition.reward + self.discount_factor * reward
+                advantage = reward - transition.value
+
+                target_values.append(reward)
+                advantages.append(advantage)
+
+            target_values.reverse()
+            advantages.reverse()
+
+            batch_target_values.append(target_values)
+            batch_advantages.append(advantages)
+
+            if batch_rnn_state is None:
+                batch_rnn_state = []
+                for state in rnn_state:
+                    batch_rnn_state.append(state)
+            else:
+                for i in range(len(batch_rnn_state)):
+                    batch_rnn_state[i] = np.vstack(
+                        (batch_rnn_state[i], rnn_state[i]))
 
         gradients, summaries = self.session.run(
             fetches=[
                 self.net.gradients_out,
-                self.net.summaries
+                self.net.summaries,
             ],
-            # fetches=[
-            #     # self.net.value_loss,
-            #     # self.net.policy_loss,
-            #     # self.net.entropy_loss,
-            #     # self.net.loss,
-            #     # self.net.selected_policy,
-            #     # self.net.gradient_norm,
-            #     # self.net.summaries,
-            #     # self.net.apply_grads,
-            # ],
             feed_dict={
-                self.net.advantages: advantages,
-                self.net.target_value: target_values,
-                self.net.actions: actions,
-                self.net.input: states,
-                **dict(zip(self.net.rnn_state_in, rnn_state))
+                self.net.target_value: batch_target_values,
+                self.net.advantages: batch_advantages,
+                self.net.actions: batch_actions,
+                self.net.input: batch_states,
+                **dict(zip(self.net.rnn_state_in, batch_rnn_state))
             }
         )
 
-        self.grad_queue.put(gradients)
+        self.grad_queue.put((gradients, total_steps))
 
         # Write summaries
         if self.summary_writer is not None:
             if summaries is not None:
                 self.summary_writer.add_summary(summaries, self._step)
 
-            # mean_value = np.mean(np.array([x.value for x in transitions]))
-            # mean_policy = np.mean(results[4])
-
-            # summary = tf.Summary()
-            # summary.value.add(tag='Perf/Value', simple_value=mean_value)
-            # summary.value.add(tag='Perf/Policy', simple_value=mean_policy)
-            # summary.value.add(tag='Norm/Gradient', simple_value=results[5])
-            # self.summary_writer.add_summary(summary, global_step)
-
             self.summary_writer.flush()
 
     def update_vars(self):
+
         self._step, params = self.param_queue.get()
 
         self.session.run(

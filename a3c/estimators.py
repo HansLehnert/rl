@@ -44,7 +44,6 @@ class AC_Network:
         input_shape = tf.shape(self.input)
         batch_size = input_shape[0]
         time_size = input_shape[1]
-        self.batch_size = batch_size
 
         input_normalized = tf.to_float(self.input) * 2 / 255.0 - 1
 
@@ -75,8 +74,6 @@ class AC_Network:
         # Fully connected layer
         dense = tf.layers.dense(
             flattened_conv, 256, name="fc1", activation=tf.nn.elu)
-        print(dense.shape)
-        self.dense = dense
 
         # LSTM
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(256)
@@ -159,7 +156,7 @@ class AC_Network:
 
         # Loss functions
         value_loss = tf.reduce_mean(
-            tf.square(self.target_value - tf.reshape(self.value, [-1])))
+            tf.square(self.target_value - tf.squeeze(self.value)))
         entropy_loss = -tf.reduce_mean(self.policy * tf.log(self.policy))
         policy_loss = tf.reduce_mean(
             tf.log(responsible_outputs) * self.advantages)
