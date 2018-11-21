@@ -90,7 +90,7 @@ class Learner:
 
                 time = datetime.datetime.now()
                 if last_time is not None:
-                    elapsed_time = (time - self.last_time).total_seconds()
+                    elapsed_time = (time - last_time).total_seconds()
 
                     summary = tf.Summary()
                     summary.value.add(
