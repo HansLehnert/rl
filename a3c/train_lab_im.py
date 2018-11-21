@@ -62,6 +62,11 @@ if True:
     prediction_loss = tf.reduce_mean(tf.norm(prediction_error, axis=1))
     net.loss += 0.1 * prediction_loss
 
+    net.summaries = tf.summary.merge([
+        tf.summary.scalar('Loss/StatePrediction', prediction_loss),
+        net.summaries
+    ])
+
     # Create workers graphs
     workers = []
     for worker_id in range(n_workers):
