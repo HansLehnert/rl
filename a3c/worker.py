@@ -11,12 +11,14 @@ Transition = collections.namedtuple(
 class AC_Worker:
     def __init__(
             self, name, net, env_class, env_params, param_queue, grad_queue,
-            discount_factor=0.99, batch_size=1, model_dir=None, **kwargs
+            discount_factor=0.99, reward_clipping=None, batch_size=1,
+            model_dir=None, **kwargs
     ):
         self.name = name
         self.param_queue = param_queue
         self.grad_queue = grad_queue
         self.discount_factor = discount_factor
+        self.reward_clipping = reward_clipping
         self.batch_size = batch_size
         self.model_dir = model_dir
 
@@ -27,6 +29,8 @@ class AC_Worker:
         self._step = 0
 
     def run(self, max_steps):
+        self.active = True
+
         # Create environemnt
         self.env = self.env_class(**(self.env_params))
 
@@ -46,7 +50,7 @@ class AC_Worker:
 
         self.update_vars()
 
-        while True:
+        while self.active:
             transitions = []
 
             # Start episode
@@ -59,7 +63,7 @@ class AC_Worker:
             episode_positive_reward = 0
             episode_negative_reward = 0
 
-            while not self.env.done():
+            while not self.env.done() and self.active:
                 policy_eval, value_eval, rnn_state = self.session.run(
                     fetches=[
                         self.net.policy,
@@ -140,6 +144,8 @@ class AC_Worker:
                 self.summary_writer.add_summary(summary, self._step)
                 self.summary_writer.flush()
 
+        print('[{}] Ending'.format(self.name))
+
     def train(self, transitions, bootstrap_value, rnn_state):
         actions = [x.action for x in transitions]
         states = [x.state for x in transitions]
@@ -150,7 +156,14 @@ class AC_Worker:
         advantages = []
 
         for transition in reversed(transitions):
-            reward = transition.reward + self.discount_factor * reward
+            clipped_reward = transition.reward
+            if self.reward_clipping is not None:
+                clipped_reward = np.clip(
+                    clipped_reward,
+                    -self.reward_clipping,
+                    self.reward_clipping)
+
+            reward = clipped_reward + self.discount_factor * reward
             advantage = reward - transition.value
 
             target_values.append(reward)
@@ -183,10 +196,14 @@ class AC_Worker:
             self.summary_writer.flush()
 
     def update_vars(self):
+        response = self.param_queue.get()
 
-        self._step, params = self.param_queue.get()
+        if isinstance(response, str) and response == 'end':
+            self.active = False
+        else:
+            self._step, params = response
 
-        self.session.run(
-            self.net.assign,
-            feed_dict=dict(zip(self.net.vars_in, params))
-        )
+            self.session.run(
+                self.net.assign,
+                feed_dict=dict(zip(self.net.vars_in, params))
+            )

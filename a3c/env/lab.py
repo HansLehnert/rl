@@ -106,12 +106,11 @@ class LabEnvironment():
                 plt.draw()
                 plt.pause(1e-5)
 
-
     def state(self):
         return self.observations['RGB_INTERLEAVED']
 
     def reward(self):
-        return np.clip(self._reward, -1, 1)
+        return self._reward
 
     def done(self):
         return not self.lab.is_running()

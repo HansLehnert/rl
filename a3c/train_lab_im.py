@@ -15,7 +15,7 @@ from learner import Learner
 parser = argparse.ArgumentParser()
 parser.add_argument('level', nargs='?', default='nav_maze_static_01')
 parser.add_argument('-n', '--n-workers', type=int, dest='n')
-parser.add_argument('--model-dir', default='./model_lab/', dest='model_dir')
+parser.add_argument('--model-dir', default='./model_im/', dest='model_dir')
 parser.add_argument('--t_max', type=int, default=100)
 parser.add_argument('--viewport', action='store_true')
 parser.add_argument('--test', action='store_true')
@@ -82,6 +82,7 @@ if True:
                 'plot': enable_viewport,
             },
             net=net,
+            reward_clipping=1,
             param_queue=parameter_queue,
             grad_queue=gradient_queue,
             model_dir=worker_summary,
