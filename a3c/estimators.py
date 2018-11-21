@@ -1,5 +1,4 @@
 import tensorflow as tf
-import numpy as np
 
 
 class AC_Network:
@@ -67,6 +66,7 @@ class AC_Network:
         # Fully connected layer
         dense = tf.layers.dense(
             flattened_conv, 256, name="fc1", activation=tf.nn.elu)
+        self.internal_representation = dense
 
         # LSTM
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(256)
@@ -142,9 +142,11 @@ class AC_Network:
         self.advantages = tf.placeholder(
             shape=[None], dtype=tf.float32, name='advantages')
 
-        actions_onehot = tf.one_hot(self.actions, n_out, dtype=tf.float32)
+        self.actions_onehot = tf.one_hot(
+            self.actions, n_out, dtype=tf.float32)
 
-        responsible_outputs = tf.reduce_sum(self.policy * actions_onehot, 2)
+        responsible_outputs = tf.reduce_sum(
+            self.policy * self.actions_onehot, 2)
         self.selected_policy = responsible_outputs
 
         # Loss functions
@@ -153,7 +155,7 @@ class AC_Network:
         entropy_loss = -tf.reduce_mean(self.policy * tf.log(self.policy))
         policy_loss = tf.reduce_mean(
             tf.log(responsible_outputs) * self.advantages)
-        loss = (
+        self.loss = (
             0.5 * value_loss
             - policy_loss
             - 0.0005 * entropy_loss
@@ -162,7 +164,8 @@ class AC_Network:
         # Get gradients from local network using local losses
         self.local_vars = tf.get_collection(
             tf.GraphKeys.TRAINABLE_VARIABLES, self.name)
-        gradients = self.optimizer.compute_gradients(loss, self.local_vars)
+        gradients = self.optimizer.compute_gradients(
+            self.loss, self.local_vars)
         gradients = [g[0] for g in gradients]
         self.gradients_out, self.gradient_norm = tf.clip_by_global_norm(
             gradients, 50)
@@ -186,10 +189,10 @@ class AC_Network:
 
         # Create summaries
         if self.add_summary:
-            tf.summary.scalar('Loss/Value', value_loss,)
-            tf.summary.scalar('Loss/Policy', policy_loss,)
-            tf.summary.scalar('Loss/Entropy', entropy_loss,)
-            tf.summary.scalar('Loss/Total', loss,)
+            tf.summary.scalar('Loss/Value', value_loss)
+            tf.summary.scalar('Loss/Policy', policy_loss)
+            tf.summary.scalar('Loss/Entropy', entropy_loss)
+            tf.summary.scalar('Loss/Total', self.loss)
 
             tf.summary.scalar('Perf/Value', tf.reduce_mean(self.value))
             tf.summary.scalar(
