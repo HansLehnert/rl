@@ -46,8 +46,6 @@ class AC_Worker:
 
         self.update_vars()
 
-        batch = []
-
         while True:
             transitions = []
 
@@ -55,7 +53,7 @@ class AC_Worker:
             self.env.reset()
             state = self.env.state()
             rnn_state = self.session.run(self.net.rnn_initial_state)
-            batch_rnn_state = rnn_state
+            initial_rnn_state = rnn_state
 
             episode_total_reward = 0
             episode_positive_reward = 0
@@ -69,7 +67,7 @@ class AC_Worker:
                         self.net.rnn_state_out
                     ],
                     feed_dict={
-                        self.net.input: [[state]],
+                        self.net.input: [state],
                         **dict(zip(self.net.rnn_state_in, rnn_state))
                     }
                 )
@@ -102,7 +100,7 @@ class AC_Worker:
                         bootstrap_value = 0
                     else:
                         feed_dict = {
-                            self.net.input: [[transitions[-1].next_state]],
+                            self.net.input: [transitions[-1].next_state],
                             **dict(zip(self.net.rnn_state_in, rnn_state))
                         }
 
@@ -112,16 +110,11 @@ class AC_Worker:
                         )
                         bootstrap_value = bootstrap_value[0, 0, 0]
 
-                    batch.append(
-                        (transitions, bootstrap_value, batch_rnn_state))
+                    self.train(transitions, bootstrap_value, initial_rnn_state)
+                    self.update_vars()
+
+                    initial_rnn_state = rnn_state
                     transitions = []
-                    batch_rnn_state = rnn_state
-
-                    if len(batch) >= self.batch_size:
-                        self.train(batch)
-                        self.update_vars()
-
-                        batch = []
 
                 state = next_state
 
@@ -147,47 +140,24 @@ class AC_Worker:
                 self.summary_writer.add_summary(summary, self._step)
                 self.summary_writer.flush()
 
-    def train(self, batch):
-        total_steps = 0
+    def train(self, transitions, bootstrap_value, rnn_state):
+        actions = [x.action for x in transitions]
+        states = [x.state for x in transitions]
 
-        batch_target_values = []
-        batch_advantages = []
-        batch_actions = []
-        batch_states = []
-        batch_rnn_state = None
+        reward = bootstrap_value
 
-        for transitions, bootstrap_value, rnn_state in batch:
-            total_steps += len(transitions)
+        target_values = []
+        advantages = []
 
-            batch_actions.append([x.action for x in transitions])
-            batch_states.append([x.state for x in transitions])
+        for transition in reversed(transitions):
+            reward = transition.reward + self.discount_factor * reward
+            advantage = reward - transition.value
 
-            reward = bootstrap_value
+            target_values.append(reward)
+            advantages.append(advantage)
 
-            target_values = []
-            advantages = []
-
-            for transition in reversed(transitions):
-                reward = transition.reward + self.discount_factor * reward
-                advantage = reward - transition.value
-
-                target_values.append(reward)
-                advantages.append(advantage)
-
-            target_values.reverse()
-            advantages.reverse()
-
-            batch_target_values.append(target_values)
-            batch_advantages.append(advantages)
-
-            if batch_rnn_state is None:
-                batch_rnn_state = []
-                for state in rnn_state:
-                    batch_rnn_state.append(state)
-            else:
-                for i in range(len(batch_rnn_state)):
-                    batch_rnn_state[i] = np.vstack(
-                        (batch_rnn_state[i], rnn_state[i]))
+        target_values.reverse()
+        advantages.reverse()
 
         gradients, summaries = self.session.run(
             fetches=[
@@ -195,15 +165,15 @@ class AC_Worker:
                 self.net.summaries,
             ],
             feed_dict={
-                self.net.target_value: batch_target_values,
-                self.net.advantages: batch_advantages,
-                self.net.actions: batch_actions,
-                self.net.input: batch_states,
-                **dict(zip(self.net.rnn_state_in, batch_rnn_state))
+                self.net.target_value: target_values,
+                self.net.advantages: advantages,
+                self.net.actions: actions,
+                self.net.input: states,
+                **dict(zip(self.net.rnn_state_in, rnn_state))
             }
         )
 
-        self.grad_queue.put((gradients, total_steps))
+        self.grad_queue.put((gradients, len(transitions)))
 
         # Write summaries
         if self.summary_writer is not None:

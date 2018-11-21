@@ -40,16 +40,13 @@ class AC_Network:
         # Image input
         # TODO: Allow size configuration
         self.input = tf.placeholder(
-            shape=[None, None] + self.input_dim, dtype=tf.uint8, name='input_')
-        input_shape = tf.shape(self.input)
-        batch_size = input_shape[0]
-        time_size = input_shape[1]
+            shape=[None] + self.input_dim, dtype=tf.uint8, name='input')
 
         input_normalized = tf.to_float(self.input) * 2 / 255.0 - 1
 
         # Convolutional layers
         conv1 = tf.layers.conv3d(
-            inputs=input_normalized,
+            inputs=tf.expand_dims(input_normalized, 0),
             filters=16,
             kernel_size=(1, 8, 8),
             strides=(1, 4, 4),
@@ -65,11 +62,7 @@ class AC_Network:
             name='conv2'
         )
 
-        flattened_conv = tf.reshape(
-            tensor=conv2,
-            shape=[batch_size, time_size, np.prod(conv2.shape[2:])],
-            name='flatten'
-        )
+        flattened_conv = tf.layers.flatten(tf.squeeze(conv2, axis=[0]))
 
         # Fully connected layer
         dense = tf.layers.dense(
@@ -88,7 +81,7 @@ class AC_Network:
         initial_state = tf.contrib.rnn.LSTMStateTuple(*self.rnn_state_in)
         lstm_out, lstm_state = tf.nn.dynamic_rnn(
             cell=lstm_cell,
-            inputs=dense,
+            inputs=tf.expand_dims(dense, 0),
             initial_state=initial_state,
             scope='lstm1'
         )
@@ -143,11 +136,11 @@ class AC_Network:
         """Create training operations."""
 
         self.actions = tf.placeholder(
-            shape=[None, None], dtype=tf.int32, name='actions')
+            shape=[None], dtype=tf.int32, name='actions')
         self.target_value = tf.placeholder(
-            shape=[None, None], dtype=tf.float32, name='target_value')
+            shape=[None], dtype=tf.float32, name='target_value')
         self.advantages = tf.placeholder(
-            shape=[None, None], dtype=tf.float32, name='advantages')
+            shape=[None], dtype=tf.float32, name='advantages')
 
         actions_onehot = tf.one_hot(self.actions, n_out, dtype=tf.float32)
 
