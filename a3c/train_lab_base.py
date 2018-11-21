@@ -14,11 +14,13 @@ from learner import Learner
 # Parse arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('level', nargs='?', default='nav_maze_static_01')
-parser.add_argument('--model_dir', default='./model_lab/')
+parser.add_argument('-n', '--n-workers', type=int, dest='n')
+parser.add_argument('--model-dir', default='./model_lab/', dest='model_dir')
 parser.add_argument('--t_max', type=int, default=100)
-parser.add_argument('-n', type=int)
 parser.add_argument('--viewport', action='store_true')
 parser.add_argument('--test', action='store_true')
+parser.add_argument(
+    '--train-steps', type=int, default=10**8, dest='train_steps')
 args = parser.parse_args(sys.argv[1:])
 
 model_dir = args.model_dir
@@ -86,10 +88,9 @@ if True:
         parameter_queue,
         gradient_queue,
         model_dir,
-        10 ** 8,
+        args.train_steps,
+        n_workers,
         learn=(not args.test)
     )
-    learner.run(len(worker_threads))
 
-    # Wait for all workers to finish
-    # coord.join(worker_threads)
+    learner.run()
