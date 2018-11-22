@@ -1,18 +1,23 @@
 import tensorflow as tf
+import functools
 
 
 class AC_Network:
     def __init__(
             self, n_out, optimizer, input_dim=None, name='', add_summary=True,
-            **kwargs):
+            initialize=True, **kwargs):
         self.name = name
         self.optimizer = optimizer
         self.add_summary = add_summary
+        self.n_out = n_out
 
         if input_dim is None:
             self.input_dim = [84, 84, 3]
         else:
             self.input_dim = input_dim
+
+        self.variable_scope = functools.partial(
+            tf.variable_scope, self.name, '', reuse=tf.AUTO_REUSE)
 
         # Empty RNN states definitions for networks that don't use RNN
         # NOTE: Move to get function?
@@ -21,15 +26,13 @@ class AC_Network:
         self.rnn_state_out = []
 
         # Create network
-        with tf.variable_scope(self.name, '', reuse=tf.AUTO_REUSE):
-            self._create_shared_network()
-            self._create_ac_network(n_out)
-            self._create_gradient_op(n_out)
-
-            self.summaries = tf.summary.merge_all(
-                tf.GraphKeys.SUMMARIES, self.name)
-            if self.summaries is None:
-                self.summaries = tf.no_op()
+        if initialize:
+            with self.variable_scope():
+                self._create_shared_network()
+                self._create_ac_network()
+                self._create_loss()
+                self._create_gradient_op()
+                self._merge_summaries()
 
     def _create_shared_network(self):
         """Defines input processing part of the network.
@@ -119,12 +122,12 @@ class AC_Network:
             #     activation /= tf.cast(tf.size(tensor), tf.float32)
             #     tf.summary.scalar('Zeros/{}'.format(name), activation)
 
-    def _create_ac_network(self, n_out):
+    def _create_ac_network(self):
         """Create network layers for policy and value outputs."""
 
         self.policy = tf.layers.dense(
             inputs=self.shared_output,
-            units=n_out,
+            units=self.n_out,
             activation=tf.nn.softmax,
             name='policy'
         )
@@ -132,9 +135,8 @@ class AC_Network:
         self.value = tf.layers.dense(
             inputs=self.shared_output, units=1, name='value')
 
-    def _create_gradient_op(self, n_out):
-        """Create training operations."""
-
+    def _create_loss(self):
+        """Create loss computation operations."""
         self.actions = tf.placeholder(
             shape=[None], dtype=tf.int32, name='actions')
         self.target_value = tf.placeholder(
@@ -143,7 +145,7 @@ class AC_Network:
             shape=[None], dtype=tf.float32, name='advantages')
 
         self.actions_onehot = tf.one_hot(
-            self.actions, n_out, dtype=tf.float32)
+            self.actions, self.n_out, dtype=tf.float32)
 
         responsible_outputs = tf.reduce_sum(
             self.policy * self.actions_onehot, 2)
@@ -160,6 +162,20 @@ class AC_Network:
             - policy_loss
             - 0.0005 * entropy_loss
         )
+
+        # Create summaries
+        if self.add_summary:
+            tf.summary.scalar('Loss/Value', value_loss)
+            tf.summary.scalar('Loss/Policy', policy_loss)
+            tf.summary.scalar('Loss/Entropy', entropy_loss)
+            tf.summary.scalar('Loss/Total', self.loss)
+
+            tf.summary.scalar('Perf/Value', tf.reduce_mean(self.value))
+            tf.summary.scalar(
+                'Perf/Policy', tf.reduce_mean(responsible_outputs))
+
+    def _create_gradient_op(self):
+        """Create training operations."""
 
         # Get gradients from local network using local losses
         self.local_vars = tf.get_collection(
@@ -187,13 +203,8 @@ class AC_Network:
             self.vars_in.append(placeholder)
             self.assign.append(assign_op)
 
-        # Create summaries
-        if self.add_summary:
-            tf.summary.scalar('Loss/Value', value_loss)
-            tf.summary.scalar('Loss/Policy', policy_loss)
-            tf.summary.scalar('Loss/Entropy', entropy_loss)
-            tf.summary.scalar('Loss/Total', self.loss)
-
-            tf.summary.scalar('Perf/Value', tf.reduce_mean(self.value))
-            tf.summary.scalar(
-                'Perf/Policy', tf.reduce_mean(responsible_outputs))
+    def _merge_summaries(self):
+        self.summaries = tf.summary.merge_all(
+            tf.GraphKeys.SUMMARIES, self.name)
+        if self.summaries is None:
+            self.summaries = tf.no_op()
