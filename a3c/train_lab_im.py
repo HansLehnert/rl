@@ -86,7 +86,7 @@ with net.variable_scope():
 
     net.loss += 0.001 * prediction_loss + 0.005 * kinematics_loss
 
-    tf.summary.scalar('Loss/ActionPrediction', prediction_loss)
+    tf.summary.scalar('Loss/ActionPrediction', kinematics_loss)
 
     net._create_gradient_op()
     net._merge_summaries()
