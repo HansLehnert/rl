@@ -63,10 +63,30 @@ with net.variable_scope():
     prediction_error = (
         state_prediction[:-1, :] - net.internal_representation[1:, :]
     )
-    prediction_loss = tf.reduce_mean(tf.norm(prediction_error, axis=1))
-    net.loss += 0.01 * prediction_loss
+    prediction_loss = tf.reduce_mean(tf.square(prediction_error))
 
     tf.summary.scalar('Loss/StatePrediction', prediction_loss)
+
+    # Inverse kinematics loss
+    dense = tf.layers.dense(
+        tf.concat(
+            [net.internal_representation[:-1],
+                net.internal_representation[:-1]],
+            1),
+        64
+    )
+
+    predicted_action = tf.layers.dense(
+        dense, len(Environment.ACTIONS)
+    )
+
+    kinematics_loss = tf.losses.softmax_cross_entropy(
+        net.actions_onehot[:-1, :], predicted_action
+    )
+
+    net.loss += 0.001 * prediction_loss + 0.005 * kinematics_loss
+
+    tf.summary.scalar('Loss/ActionPrediction', prediction_loss)
 
     net._create_gradient_op()
     net._merge_summaries()
