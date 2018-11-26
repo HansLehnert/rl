@@ -2,6 +2,7 @@ import collections
 import os.path
 import numpy as np
 import tensorflow as tf
+import copy
 
 Transition = collections.namedtuple(
     'Transition',
@@ -12,7 +13,7 @@ class AC_Worker:
     def __init__(
             self, name, net, env_class, env_params, param_queue, grad_queue,
             discount_factor=0.99, reward_clipping=None, batch_size=1,
-            model_dir=None, **kwargs
+            state_buffer=None, model_dir=None, **kwargs
     ):
         self.name = name
         self.param_queue = param_queue
@@ -20,6 +21,7 @@ class AC_Worker:
         self.discount_factor = discount_factor
         self.reward_clipping = reward_clipping
         self.batch_size = batch_size
+        self.state_buffer_size = state_buffer
         self.model_dir = model_dir
 
         self.env_class = env_class
@@ -55,6 +57,7 @@ class AC_Worker:
 
             # Start episode
             self.env.reset()
+            env_steps = 0
             state = self.env.state()
             rnn_state = self.session.run(self.net.rnn_initial_state)
             initial_rnn_state = rnn_state
@@ -63,41 +66,65 @@ class AC_Worker:
             episode_positive_reward = 0
             episode_negative_reward = 0
 
+            # Create buffer
+            buffer_steps = max(self.state_buffer_size)
+            state_buffer = [[] for i in range(len(self.state_buffer_size))]
+            batch_state_buffer = None
+
             while not self.env.done() and self.active:
-                policy_eval, value_eval, rnn_state = self.session.run(
-                    fetches=[
-                        self.net.policy,
-                        self.net.value,
-                        self.net.rnn_state_out
-                    ],
-                    feed_dict={
-                        **dict(zip(self.net.rnn_state_in, rnn_state)),
-                        **dict(zip(self.net.inputs, self.group_states(
-                            [state]))),
-                    }
-                )
+                env_steps += 1
 
-                policy_eval = np.squeeze(policy_eval) + 1e-6
-                value_eval = value_eval[0, 0, 0]
+                # Add last state to buffer
+                for n in range(len(state)):
+                    state_buffer[n].append(state[n])
+                    if len(state_buffer[n]) > self.state_buffer_size[n]:
+                        state_buffer[n].pop(0)
 
-                # Compute next action based on policy
-                action = np.random.choice(
-                    len(self.env.ACTIONS), p=policy_eval)
-                self.env.step(self.env.ACTIONS[action])
+                # Until the state buffer has been filled, make tandom actions
+                if env_steps < buffer_steps:
+                    action = np.random.choice(self.env.ACTIONS)
+                    self.env.step(action)
 
-                next_state = self.env.state()
-                reward = self.env.reward()
-                done = self.env.done()
-
-                episode_total_reward += reward
-                if reward > 0:
-                    episode_positive_reward += reward
+                    next_state = self.env.state()
+                    done = self.env.done()
                 else:
-                    episode_negative_reward += reward
+                    if batch_state_buffer is None:
+                        batch_state_buffer = copy.deepcopy(state_buffer)
 
-                # Store transitions
-                transitions.append(Transition(
-                    state, action, reward, value_eval, next_state, done))
+                    policy_eval, value_eval, rnn_state = self.session.run(
+                        fetches=[
+                            self.net.policy,
+                            self.net.value,
+                            self.net.rnn_state_out
+                        ],
+                        feed_dict={
+                            **dict(zip(self.net.rnn_state_in, rnn_state)),
+                            **dict(zip(self.net.inputs, self.group_states(
+                                [state], state_buffer))),
+                        }
+                    )
+
+                    policy_eval = np.squeeze(policy_eval) + 1e-6
+                    value_eval = value_eval[0, 0, 0]
+
+                    # Compute next action based on policy
+                    action = np.random.choice(
+                        len(self.env.ACTIONS), p=policy_eval)
+                    self.env.step(self.env.ACTIONS[action])
+
+                    next_state = self.env.state()
+                    reward = self.env.reward()
+                    done = self.env.done()
+
+                    episode_total_reward += reward
+                    if reward > 0:
+                        episode_positive_reward += reward
+                    else:
+                        episode_negative_reward += reward
+
+                    # Store transitions
+                    transitions.append(Transition(
+                        state, action, reward, value_eval, next_state, done))
 
                 # Update global network
                 if len(transitions) >= max_steps or done:
@@ -107,7 +134,7 @@ class AC_Worker:
                         feed_dict = {
                             **dict(zip(self.net.rnn_state_in, rnn_state)),
                             **dict(zip(self.net.inputs, self.group_states(
-                                [transitions[-1].next_state]))),
+                                [transitions[-1].next_state], state_buffer))),
                         }
 
                         bootstrap_value = self.session.run(
@@ -116,11 +143,17 @@ class AC_Worker:
                         )
                         bootstrap_value = bootstrap_value[0, 0, 0]
 
-                    self.train(transitions, bootstrap_value, initial_rnn_state)
+                    self.train(
+                        transitions,
+                        bootstrap_value,
+                        initial_rnn_state,
+                        batch_state_buffer,
+                    )
                     self.update_vars()
 
                     initial_rnn_state = rnn_state
                     transitions = []
+                    batch_state_buffer = None
 
                 state = next_state
 
@@ -148,7 +181,7 @@ class AC_Worker:
 
         print('[{}] Ending'.format(self.name))
 
-    def train(self, transitions, bootstrap_value, rnn_state):
+    def train(self, transitions, bootstrap_value, rnn_state, state_buffer):
         actions = [x.action for x in transitions]
         states = [x.state for x in transitions]
 
@@ -183,7 +216,8 @@ class AC_Worker:
                 self.net.target_value: target_values,
                 self.net.advantages: advantages,
                 self.net.actions: actions,
-                **dict(zip(self.net.inputs, self.group_states(states))),
+                **dict(zip(
+                    self.net.inputs, self.group_states(states, state_buffer))),
                 **dict(zip(self.net.rnn_state_in, rnn_state))
             }
         )
@@ -210,6 +244,9 @@ class AC_Worker:
                 feed_dict=dict(zip(self.net.vars_in, params))
             )
 
-    def group_states(self, states):
-        result = [[s[i] for s in states] for i in range(len(states[0]))]
+    def group_states(self, states, buffer):
+        result = []
+        for i in range(len(states[0])):
+            result.append([s[i] for s in states] + buffer[i])
+        # print(result)
         return result
