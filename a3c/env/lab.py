@@ -16,8 +16,11 @@ class LabEnvironment():
     def __init__(
         self,
         level,
+        reward_feedback=False,
         plot=False
     ):
+        self.reward_feedback = reward_feedback
+
         self.lab = deepmind_lab.Lab(
             level,
             ['RGB_INTERLEAVED', 'DEBUG.POS.TRANS'],
@@ -107,7 +110,11 @@ class LabEnvironment():
                 plt.pause(1e-5)
 
     def state(self):
-        return self.observations['RGB_INTERLEAVED']
+        state = [self.observations['RGB_INTERLEAVED']]
+        if self.reward_feedback:
+            state.append(self._reward)
+
+        return tuple(state)
 
     def reward(self):
         return self._reward

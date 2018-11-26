@@ -71,8 +71,9 @@ class AC_Worker:
                         self.net.rnn_state_out
                     ],
                     feed_dict={
-                        self.net.input: [state],
-                        **dict(zip(self.net.rnn_state_in, rnn_state))
+                        **dict(zip(self.net.rnn_state_in, rnn_state)),
+                        **dict(zip(self.net.inputs, self.group_states(
+                            [state]))),
                     }
                 )
 
@@ -104,8 +105,9 @@ class AC_Worker:
                         bootstrap_value = 0
                     else:
                         feed_dict = {
-                            self.net.input: [transitions[-1].next_state],
-                            **dict(zip(self.net.rnn_state_in, rnn_state))
+                            **dict(zip(self.net.rnn_state_in, rnn_state)),
+                            **dict(zip(self.net.inputs, self.group_states(
+                                [transitions[-1].next_state]))),
                         }
 
                         bootstrap_value = self.session.run(
@@ -181,7 +183,7 @@ class AC_Worker:
                 self.net.target_value: target_values,
                 self.net.advantages: advantages,
                 self.net.actions: actions,
-                self.net.input: states,
+                **dict(zip(self.net.inputs, self.group_states(states))),
                 **dict(zip(self.net.rnn_state_in, rnn_state))
             }
         )
@@ -207,3 +209,7 @@ class AC_Worker:
                 self.net.assign,
                 feed_dict=dict(zip(self.net.vars_in, params))
             )
+
+    def group_states(self, states):
+        result = [[s[i] for s in states] for i in range(len(states[0]))]
+        return result

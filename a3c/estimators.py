@@ -1,23 +1,20 @@
 import tensorflow as tf
-import functools
 
 
 class AC_Network:
     def __init__(
             self, n_out, optimizer, input_dim=None, name='', add_summary=True,
-            initialize=True, **kwargs):
+            prediction_loss=False, reward_feedback=False, visual_depth=None):
         self.name = name
         self.optimizer = optimizer
         self.add_summary = add_summary
         self.n_out = n_out
 
+        # Default balues
         if input_dim is None:
-            self.input_dim = [84, 84, 3]
-        else:
-            self.input_dim = input_dim
-
-        self.variable_scope = functools.partial(
-            tf.variable_scope, self.name, '', reuse=tf.AUTO_REUSE)
+            input_dim = [84, 84, 3]
+        if visual_depth is None:
+            visual_depth = 1
 
         # Empty RNN states definitions for networks that don't use RNN
         # NOTE: Move to get function?
@@ -25,32 +22,39 @@ class AC_Network:
         self.rnn_state_in = []
         self.rnn_state_out = []
 
-        # Create network
-        if initialize:
-            with self.variable_scope():
-                self._create_shared_network()
-                self._create_ac_network()
-                self._create_loss()
-                self._create_gradient_op()
-                self._merge_summaries()
+        self.inputs = []
 
-    def _create_shared_network(self):
+        # Create network
+        with tf.variable_scope(self.name, '', reuse=tf.AUTO_REUSE):
+            self._create_shared_network(
+                input_dim, reward_feedback, visual_depth)
+            self._create_ac_network()
+            self._create_loss(prediction_loss)
+            self._create_gradient_op()
+            self._merge_summaries()
+
+    def _create_shared_network(self, input_dim, reward_feedback, visual_depth):
         """Defines input processing part of the network.
 
         Override to change network architecture."""
 
-        # Image input
-        # TODO: Allow size configuration
-        self.input = tf.placeholder(
-            shape=[None] + self.input_dim, dtype=tf.uint8, name='input')
+        # Inputs
+        visual_input = tf.placeholder(
+            shape=[None] + input_dim, dtype=tf.uint8, name='visual_input')
+        self.inputs.append(visual_input)
 
-        input_normalized = tf.to_float(self.input) * 2 / 255.0 - 1
+        if reward_feedback:
+            reward_input = tf.placeholder(
+                shape=[None], dtype=tf.float32, name='reward_input')
+            self.inputs.append(reward_input)
+
+        input_normalized = tf.to_float(visual_input) * 2 / 255.0 - 1
 
         # Convolutional layers
         conv1 = tf.layers.conv3d(
             inputs=tf.expand_dims(input_normalized, 0),
             filters=16,
-            kernel_size=(1, 8, 8),
+            kernel_size=(visual_depth, 8, 8),
             strides=(1, 4, 4),
             activation=tf.nn.elu,
             name='conv1'
@@ -71,6 +75,12 @@ class AC_Network:
             flattened_conv, 256, name="fc1", activation=tf.nn.elu)
         self.internal_representation = dense
 
+        if reward_feedback:
+            lstm_input = tf.concat(
+                [dense, tf.expand_dims(reward_input, -1)], 1)
+        else:
+            lstm_input = dense
+
         # LSTM
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(256)
         lstm_state_size = lstm_cell.state_size
@@ -84,7 +94,7 @@ class AC_Network:
         initial_state = tf.contrib.rnn.LSTMStateTuple(*self.rnn_state_in)
         lstm_out, lstm_state = tf.nn.dynamic_rnn(
             cell=lstm_cell,
-            inputs=tf.expand_dims(dense, 0),
+            inputs=tf.expand_dims(lstm_input, 0),
             initial_state=initial_state,
             scope='lstm1'
         )
@@ -97,8 +107,11 @@ class AC_Network:
         if self.add_summary:
             # Weights
             conv1_kernel = tf.transpose(
-                tf.squeeze(tf.get_variable('conv1/kernel')), [3, 0, 1, 2])
-            tf.summary.image('Kernel/Conv1', conv1_kernel, max_outputs=16)
+                tf.reduce_mean(tf.get_variable('conv1/kernel'), axis=0),
+                [3, 0, 1, 2]
+            )
+            tf.summary.image(
+                'Kernel/Conv1Spatial', conv1_kernel, max_outputs=16)
 
             # tf.summary.scalar(
             #     'Weights/Conv1', tf.reduce_sum(tf.abs(conv1_kernel)))
@@ -135,7 +148,7 @@ class AC_Network:
         self.value = tf.layers.dense(
             inputs=self.shared_output, units=1, name='value')
 
-    def _create_loss(self):
+    def _create_loss(self, prediction_loss):
         """Create loss computation operations."""
         self.actions = tf.placeholder(
             shape=[None], dtype=tf.int32, name='actions')
@@ -163,12 +176,48 @@ class AC_Network:
             - 0.0005 * entropy_loss
         )
 
+        if prediction_loss:
+            # State prediction
+            prediction_input = tf.concat(
+                [self.internal_representation, self.actions_onehot], 1)
+            state_prediction = tf.layers.dense(
+                prediction_input,
+                256,
+                name='state_prediction',
+                activation=tf.nn.elu)
+
+            prediction_error = (
+                state_prediction[:-1, :]
+                - self.internal_representation[1:, :]
+            )
+            state_loss = tf.reduce_mean(tf.square(prediction_error))
+
+            # Inverse kinematics
+            dense = tf.layers.dense(
+                tf.concat(
+                    [self.internal_representation[:-1],
+                        self.internal_representation[:-1]],
+                    1),
+                64
+            )
+
+            predicted_action = tf.layers.dense(dense, self.n_out)
+
+            kinematics_loss = tf.losses.softmax_cross_entropy(
+                self.actions_onehot[:-1, :], predicted_action)
+
+            self.loss += 0.01 * state_loss + 0.005 * kinematics_loss
+
         # Create summaries
         if self.add_summary:
             tf.summary.scalar('Loss/Value', value_loss)
             tf.summary.scalar('Loss/Policy', policy_loss)
             tf.summary.scalar('Loss/Entropy', entropy_loss)
             tf.summary.scalar('Loss/Total', self.loss)
+
+            if prediction_loss:
+                tf.summary.scalar('Loss/StatePrediction', state_loss)
+                tf.summary.scalar('Loss/ActionPrediction', kinematics_loss)
 
             tf.summary.scalar('Perf/Value', tf.reduce_mean(self.value))
             tf.summary.scalar(
