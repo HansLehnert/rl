@@ -1,4 +1,5 @@
 import tensorflow as tf
+import tensorboard.plugins.beholder
 import datetime
 import os.path
 
@@ -6,7 +7,7 @@ import os.path
 class Learner:
     def __init__(
             self, net, param_queue, grad_queue, model_dir, max_steps,
-            n_workers, learn=True, **kwargs
+            n_workers, learn=True, beholder=False, **kwargs
     ):
         self.net = net
         self.param_queue = param_queue
@@ -14,6 +15,7 @@ class Learner:
         self.max_steps = max_steps
         self.n_workers = n_workers
         self.learn = learn
+        self.enable_beholder = beholder
 
         self.model_dir = model_dir
         self.summary_dir = os.path.join(model_dir, 'learner')
@@ -24,6 +26,10 @@ class Learner:
         session_config.gpu_options.allow_growth = True
 
         session = tf.Session(config=session_config)
+
+        # Tensorboard beholder
+        if self.enable_beholder:
+            beholder = tensorboard.plugins.beholder.Beholder(self.model_dir)
 
         # Step counters
         global_step_counter = tf.train.get_or_create_global_step()
@@ -82,6 +88,9 @@ class Learner:
             # Send parameters back
             local_vars = session.run(self.net.local_vars)
             self.param_queue.put((step, local_vars))
+
+            if self.enable_beholder:
+                beholder.update(session)
 
             # Save model
             if self.learn and step % 1000 == 0:

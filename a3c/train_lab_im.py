@@ -21,7 +21,7 @@ def main(argv):
         '-n', '--n-workers', type=int, dest='n',
         help='number of worker processes')
     parser.add_argument(
-        '--model-dir', default='models/model_im/', dest='model_dir',
+        '--model-dir', default='model_im/', dest='model_dir',
         help='directory to store the trained model')
     parser.add_argument(
         '--t_max', type=int, default=100)
@@ -33,9 +33,11 @@ def main(argv):
     parser.add_argument(
         '--train-steps', type=int, default=10**8, dest='train_steps',
         help='maximum number of training steps')
+    parser.add_argument(
+        '--beholder', action='store_true', help='enable tensorboard beholder')
     args = parser.parse_args(argv)
 
-    model_dir = args.model_dir
+    model_dir = os.path.join('models', args.model_dir)
     if not model_dir.endswith(os.sep):
         model_dir += os.sep
 
@@ -61,7 +63,7 @@ def main(argv):
         optimizer=optimizer,
         reward_feedback=True,
         prediction_loss=True,
-        visual_depth=8,
+        visual_depth=1,
     )
 
     # Create workers graphs
@@ -89,6 +91,7 @@ def main(argv):
             param_queue=parameter_queue,
             grad_queue=gradient_queue,
             model_dir=worker_summary,
+            state_buffer=(7, 0),
         )
         workers.append(worker)
 
@@ -107,7 +110,8 @@ def main(argv):
         model_dir,
         args.train_steps,
         n_workers,
-        learn=(not args.test)
+        learn=(not args.test),
+        beholder=args.beholder,
     )
 
     learner.run()
