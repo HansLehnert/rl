@@ -1,13 +1,15 @@
 import deepmind_lab
 import numpy as np
 import matplotlib.pyplot as plt
-import skimage
+import skimage.color
 
 
 class LabEnvironment():
     ACTIONS = (
         'MOVE_FORWARD',
         'MOVE_BACKWARD',
+        'WALK_AND_ROTATE_LEFT',
+        'WALK_AND_ROTATE_RIGHT',
         'LOOK_LEFT',
         'LOOK_RIGHT',
         'STRAFE_LEFT',
@@ -17,10 +19,14 @@ class LabEnvironment():
     def __init__(
         self,
         level,
-        plot=False,
+        action_repeat=4,
+        skip_repeat_frames=True,
         reward_feedback=False,
         color_space='rgb',
+        plot=False,
     ):
+        self.action_repeat = action_repeat
+        self.skip_repeat_frames = skip_repeat_frames
         self.reward_feedback = reward_feedback
         self.color_space = color_space
 
@@ -57,6 +63,7 @@ class LabEnvironment():
         action_vec = np.zeros((7,), dtype=np.intc)
 
         if action == 'MOVE_FORWARD':
+            action_vec = (0, 0, 0, 1, 0, 0, 0)
             action_vec[3] = 1
         elif action == 'MOVE_BACKWARD':
             action_vec[3] = -1
@@ -69,64 +76,72 @@ class LabEnvironment():
         elif action == 'STRAFE_RIGHT':
             action_vec[2] = 1
 
-        if not self.plot:
-            self._reward = self.lab.step(action_vec, 4)
+        if not self.plot and self.skip_repeat_frames:
+            self._reward = self.lab.step(action_vec, self.action_repeat)
 
             if self.lab.is_running():
-                self._observations = self.lab.observations()
+                self._frames = [self.lab.observations()['RGB_INTERLEAVED']]
         else:
             self._reward = 0
+            self._frames = []
 
-            for i in range(4):
+            for i in range(self.action_repeat):
                 step_reward = self.lab.step(action_vec, 1)
                 self._reward += step_reward
 
                 if not self.lab.is_running():
                     break
 
-                self._observations = self.lab.observations()
+                observations = self.lab.observations()
+                if not self.skip_repeat_frames or i == self.action_repeat - 1:
+                    self._frames.append(observations['RGB_INTERLEAVED'])
 
-                # Update viewport
-                self.viewport.set_data(self._observations['RGB_INTERLEAVED'])
+                if self.plot:
+                    # Update viewport
+                    self.viewport.set_data(observations['RGB_INTERLEAVED'])
 
-                # Update trajectory
-                position = self._observations['DEBUG.POS.TRANS']
-                self.trajectory.set_xdata(
-                    np.append(self.trajectory.get_xdata(), position[0]))
-                self.trajectory.set_ydata(
-                    np.append(self.trajectory.get_ydata(), position[1]))
+                    # Update trajectory
+                    position = observations['DEBUG.POS.TRANS']
+                    self.trajectory.set_xdata(
+                        np.append(self.trajectory.get_xdata(), position[0]))
+                    self.trajectory.set_ydata(
+                        np.append(self.trajectory.get_ydata(), position[1]))
 
-                if step_reward == 10:
-                    self.trajectory.set_linestyle('--')
-                    self.trajectory, = plt.plot([], [])
-                elif step_reward != 0:
-                    self.points.set_xdata(
-                        np.append(self.points.get_xdata(), position[0]))
-                    self.points.set_ydata(
-                        np.append(self.points.get_ydata(), position[1]))
+                    if step_reward == 10:
+                        self.trajectory.set_linestyle('--')
+                        self.trajectory, = plt.plot([], [])
+                    elif step_reward != 0:
+                        self.points.set_xdata(
+                            np.append(self.points.get_xdata(), position[0]))
+                        self.points.set_ydata(
+                            np.append(self.points.get_ydata(), position[1]))
 
-                axes = plt.gca()
-                axes.relim()
-                axes.autoscale_view()
+                    axes = plt.gca()
+                    axes.relim()
+                    axes.autoscale_view()
 
-                plt.draw()
-                plt.pause(1e-5)
+                    plt.draw()
+                    plt.pause(1e-5)
+
+        # Convert color space
+        if self.color_space == 'lab':
+            for i in range(len(self._frames)):
+                self._frames[i] = skimage.color.rgb2lab(self._frames[i])
+                self._frames[i] += np.array([[[0, 128, 128]]])
+                self._frames[i] += np.array([[[2.55, 1, 1]]])
+                self._frames[i] = self._frames[i].astype(int)
+
+        if len(self._frames) > 0:
+            self._frames = np.stack(self._frames, 0)
 
     @property
     def state(self):
         result = []
 
-        image = self._observations['RGB_INTERLEAVED']
-        if self.color_space == 'lab':
-            image = skimage.color.rgb2lab(image)
-            image += np.array([[[0, 128, 128]]])
-            image += np.array([[[2.55, 1, 1]]])
-            image = image.astype(int)
-
-        result.append(image)
+        result.append(self._frames)
 
         if self.reward_feedback:
-            result.append(self._reward)
+            result.append(np.array([self._reward]))
 
         return tuple(result)
 
@@ -151,12 +166,12 @@ if __name__ == '__main__':
 
         plt.clf()
         plt.subplot(2, 2, 1)
-        plt.imshow(lab.state[0])
+        plt.imshow(np.squeeze(lab.state[0]))
         plt.subplot(2, 2, 2)
-        plt.imshow(lab.state[0][:, :, 0])
+        plt.imshow(lab.state[0][0, :, :, 0])
         plt.subplot(2, 2, 3)
-        plt.imshow(lab.state[0][:, :, 1])
+        plt.imshow(lab.state[0][0, :, :, 1])
         plt.subplot(2, 2, 4)
-        plt.imshow(lab.state[0][:, :, 2])
+        plt.imshow(lab.state[0][0, :, :, 2])
         plt.draw()
         plt.pause(1e-5)

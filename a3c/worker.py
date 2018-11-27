@@ -247,6 +247,7 @@ class AC_Worker:
     def group_states(self, states, buffer):
         result = []
         for i in range(len(states[0])):
-            result.append(buffer[i] + [s[i] for s in states])
+            state_group = buffer[i] + [s[i] for s in states]
+            result.append(np.concatenate(state_group, 0))
         # print(result)
         return result
