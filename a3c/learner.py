@@ -62,7 +62,7 @@ class Learner:
         # Send the initial parameters to the worker threads
         local_vars = session.run(self.net.local_vars)
         for i in range(self.n_workers):
-            self.param_queue.put((step, local_vars))
+            self.param_queue.put((env_step, local_vars))
 
         last_time = None
 
@@ -87,7 +87,7 @@ class Learner:
 
             # Send parameters back
             local_vars = session.run(self.net.local_vars)
-            self.param_queue.put((step, local_vars))
+            self.param_queue.put((env_step, local_vars))
 
             if self.enable_beholder:
                 beholder.update(session)
