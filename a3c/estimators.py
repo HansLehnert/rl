@@ -3,8 +3,17 @@ import tensorflow as tf
 
 class AC_Network:
     def __init__(
-            self, n_out, optimizer, input_dim=None, name='', add_summary=True,
-            prediction_loss=False, reward_feedback=False, visual_depth=None):
+            self,
+            n_out,
+            optimizer,
+            input_dim=None,
+            add_summary=True,
+            prediction_loss=False,
+            reward_feedback=False,
+            visual_depth=1,
+            temporal_stride=1,
+            name='',
+    ):
         self.name = name
         self.optimizer = optimizer
         self.add_summary = add_summary
@@ -13,8 +22,6 @@ class AC_Network:
         # Default balues
         if input_dim is None:
             input_dim = [84, 84, 3]
-        if visual_depth is None:
-            visual_depth = 1
 
         # Empty RNN states definitions for networks that don't use RNN
         # NOTE: Move to get function?
@@ -27,13 +34,14 @@ class AC_Network:
         # Create network
         with tf.variable_scope(self.name, '', reuse=tf.AUTO_REUSE):
             self._create_shared_network(
-                input_dim, reward_feedback, visual_depth)
+                input_dim, reward_feedback, visual_depth, temporal_stride)
             self._create_ac_network()
             self._create_loss(prediction_loss)
             self._create_gradient_op()
             self._merge_summaries()
 
-    def _create_shared_network(self, input_dim, reward_feedback, visual_depth):
+    def _create_shared_network(
+            self, input_dim, reward_feedback, visual_depth, temporal_stride):
         """Defines input processing part of the network.
 
         Override to change network architecture."""
@@ -55,7 +63,7 @@ class AC_Network:
             inputs=tf.expand_dims(input_normalized, 0),
             filters=16,
             kernel_size=(visual_depth, 8, 8),
-            strides=(1, 4, 4),
+            strides=(temporal_stride, 4, 4),
             activation=tf.nn.elu,
             name='conv1'
         )

@@ -21,7 +21,7 @@ def main(argv):
         '-n', '--n-workers', type=int, dest='n',
         help='number of worker processes')
     parser.add_argument(
-        '--model-dir', default='model_im/', dest='model_dir',
+        '--model-dir', default='models/lab',
         help='directory to store the trained model')
     parser.add_argument(
         '--t_max', type=int, default=100)
@@ -31,13 +31,23 @@ def main(argv):
     parser.add_argument(
         '--test', action='store_true', help='disable training')
     parser.add_argument(
-        '--train-steps', type=int, default=10**8, dest='train_steps',
+        '--train-steps', type=int, default=10**8,
         help='maximum number of training steps')
     parser.add_argument(
         '--beholder', action='store_true', help='enable tensorboard beholder')
+    parser.add_argument(
+        '--prediction', action='store_true', help='include prediction loss')
+    parser.add_argument(
+        '--reward-feedback', action='store_true',
+        help='add reward feedback into the network')
+    parser.add_argument(
+        '--temporal-filter', action='store_true')
+    parser.add_argument(
+        '--color', default='rgb')
+
     args = parser.parse_args(argv)
 
-    model_dir = os.path.join('models', args.model_dir)
+    model_dir = args.model_dir
     if not model_dir.endswith(os.sep):
         model_dir += os.sep
 
@@ -61,9 +71,10 @@ def main(argv):
     net = estimators.AC_Network(
         n_out=len(Environment.ACTIONS),
         optimizer=optimizer,
-        reward_feedback=True,
-        prediction_loss=True,
-        visual_depth=1,
+        reward_feedback=args.reward_feedback,
+        prediction_loss=args.prediction,
+        visual_depth=(8 if args.temporal_filter else 1),
+        temporal_stride=(4 if args.temporal_filter else 1),
     )
 
     # Create workers graphs
@@ -83,7 +94,9 @@ def main(argv):
             env_class=Environment,
             env_params={
                 'level': args.level,
-                'reward_feedback': True,
+                'reward_feedback': args.reward_feedback,
+                'skip_repeat_frames': not args.temporal_filter,
+                'color_space': args.color,
                 'plot': enable_viewport,
             },
             net=net,
@@ -91,7 +104,7 @@ def main(argv):
             param_queue=parameter_queue,
             grad_queue=gradient_queue,
             model_dir=worker_summary,
-            state_buffer=(7, 0),
+            state_buffer=(1 if args.temporal_filter else 0, 0),
         )
         workers.append(worker)
 
@@ -110,7 +123,7 @@ def main(argv):
         model_dir,
         args.train_steps,
         n_workers,
-        learn=(not args.test),
+        learn=not args.test,
         beholder=args.beholder,
     )
 
