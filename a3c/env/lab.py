@@ -60,21 +60,25 @@ class LabEnvironment():
             self.trajectory, = plt.plot([], [])
 
     def step(self, action=None):
-        action_vec = np.zeros((7,), dtype=np.intc)
-
         if action == 'MOVE_FORWARD':
             action_vec = (0, 0, 0, 1, 0, 0, 0)
-            action_vec[3] = 1
         elif action == 'MOVE_BACKWARD':
-            action_vec[3] = -1
+            action_vec = (0, 0, 0, -1, 0, 0, 0)
         elif action == 'LOOK_LEFT':
-            action_vec[0] = -30
+            action_vec = (-30, 0, 0, 0, 0, 0, 0)
         elif action == 'LOOK_RIGHT':
-            action_vec[0] = 30
+            action_vec = (30, 0, 0, 0, 0, 0, 0)
         elif action == 'STRAFE_LEFT':
-            action_vec[2] = -1
+            action_vec = (0, 0, -1, 0, 0, 0, 0)
         elif action == 'STRAFE_RIGHT':
-            action_vec[2] = 1
+            action_vec = (0, 0, 1, 0, 0, 0, 0)
+        elif action == 'WALK_AND_ROTATE_LEFT':
+            action_vec = (-20, 0, 0, 1, 0, 0, 0)
+        elif action == 'WALK_AND_ROTATE_RIGHT':
+            action_vec = (20, 0, 0, 1, 0, 0, 0)
+        else:
+            action_vec = (0, 0, 0, 0, 0, 0, 0)
+        action_vec = np.array(action_vec, dtype=np.intc)
 
         if not self.plot and self.skip_repeat_frames:
             self._reward = self.lab.step(action_vec, self.action_repeat)
