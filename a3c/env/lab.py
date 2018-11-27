@@ -1,6 +1,7 @@
 import deepmind_lab
 import numpy as np
 import matplotlib.pyplot as plt
+import skimage
 
 
 class LabEnvironment():
@@ -16,10 +17,12 @@ class LabEnvironment():
     def __init__(
         self,
         level,
+        plot=False,
         reward_feedback=False,
-        plot=False
+        color_space='rgb',
     ):
         self.reward_feedback = reward_feedback
+        self.color_space = color_space
 
         self.lab = deepmind_lab.Lab(
             level,
@@ -70,7 +73,7 @@ class LabEnvironment():
             self._reward = self.lab.step(action_vec, 4)
 
             if self.lab.is_running():
-                self.observations = self.lab.observations()
+                self._observations = self.lab.observations()
         else:
             self._reward = 0
 
@@ -81,13 +84,13 @@ class LabEnvironment():
                 if not self.lab.is_running():
                     break
 
-                self.observations = self.lab.observations()
+                self._observations = self.lab.observations()
 
                 # Update viewport
-                self.viewport.set_data(self.observations['RGB_INTERLEAVED'])
+                self.viewport.set_data(self._observations['RGB_INTERLEAVED'])
 
                 # Update trajectory
-                position = self.observations['DEBUG.POS.TRANS']
+                position = self._observations['DEBUG.POS.TRANS']
                 self.trajectory.set_xdata(
                     np.append(self.trajectory.get_xdata(), position[0]))
                 self.trajectory.set_ydata(
@@ -109,15 +112,51 @@ class LabEnvironment():
                 plt.draw()
                 plt.pause(1e-5)
 
+    @property
     def state(self):
-        state = [self.observations['RGB_INTERLEAVED']]
+        result = []
+
+        image = self._observations['RGB_INTERLEAVED']
+        if self.color_space == 'lab':
+            image = skimage.color.rgb2lab(image)
+            image += np.array([[[0, 128, 128]]])
+            image += np.array([[[2.55, 1, 1]]])
+            image = image.astype(int)
+
+        result.append(image)
+
         if self.reward_feedback:
-            state.append(self._reward)
+            result.append(self._reward)
 
-        return tuple(state)
+        return tuple(result)
 
+    @property
     def reward(self):
         return self._reward
 
+    @property
     def done(self):
         return not self.lab.is_running()
+
+
+if __name__ == '__main__':
+    lab = LabEnvironment('nav_maze_static_01', plot=True, color_space='lab')
+
+    plt.figure()
+    plt.show(block=False)
+
+    lab.reset()
+    while not lab.done:
+        lab.step(np.random.choice(lab.ACTIONS))
+
+        plt.clf()
+        plt.subplot(2, 2, 1)
+        plt.imshow(lab.state[0])
+        plt.subplot(2, 2, 2)
+        plt.imshow(lab.state[0][:, :, 0])
+        plt.subplot(2, 2, 3)
+        plt.imshow(lab.state[0][:, :, 1])
+        plt.subplot(2, 2, 4)
+        plt.imshow(lab.state[0][:, :, 2])
+        plt.draw()
+        plt.pause(1e-5)

@@ -58,7 +58,7 @@ class AC_Worker:
             # Start episode
             self.env.reset()
             env_steps = 0
-            state = self.env.state()
+            state = self.env.state
             rnn_state = self.session.run(self.net.rnn_initial_state)
             initial_rnn_state = rnn_state
 
@@ -71,7 +71,7 @@ class AC_Worker:
             state_buffer = [[] for i in range(len(self.state_buffer_size))]
             batch_state_buffer = None
 
-            while not self.env.done() and self.active:
+            while not self.env.done and self.active:
                 env_steps += 1
 
                 # Add last state to buffer
@@ -85,8 +85,8 @@ class AC_Worker:
                     action = np.random.choice(self.env.ACTIONS)
                     self.env.step(action)
 
-                    next_state = self.env.state()
-                    done = self.env.done()
+                    next_state = self.env.state
+                    done = self.env.done
                 else:
                     if batch_state_buffer is None:
                         batch_state_buffer = copy.deepcopy(state_buffer)
@@ -112,9 +112,9 @@ class AC_Worker:
                         len(self.env.ACTIONS), p=policy_eval)
                     self.env.step(self.env.ACTIONS[action])
 
-                    next_state = self.env.state()
-                    reward = self.env.reward()
-                    done = self.env.done()
+                    next_state = self.env.state
+                    reward = self.env.reward
+                    done = self.env.done
 
                     episode_total_reward += reward
                     if reward > 0:
@@ -247,6 +247,6 @@ class AC_Worker:
     def group_states(self, states, buffer):
         result = []
         for i in range(len(states[0])):
-            result.append([s[i] for s in states] + buffer[i])
+            result.append(buffer[i] + [s[i] for s in states])
         # print(result)
         return result
