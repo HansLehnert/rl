@@ -24,7 +24,7 @@ def main(argv):
         '--model-dir', default='models/lab',
         help='directory to store the trained model')
     parser.add_argument(
-        '--t_max', type=int, default=100)
+        '--t_max', type=int, default=50)
     parser.add_argument(
         '--viewport', action='store_true',
         help='open a viewport for the environment')
@@ -50,6 +50,7 @@ def main(argv):
     model_dir = args.model_dir
     if not model_dir.endswith(os.sep):
         model_dir += os.sep
+    os.makedirs(model_dir)
 
     # Set the number of workers
     if args.test:
