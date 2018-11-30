@@ -75,25 +75,54 @@ class AC_Network:
 
         # Convolutional layers
         if kernel is not None:
-            visual_kernel = tf.constant(
-                kernel, dtype=tf.float32, name='visual_kernel')
+            with tf.variable_scope('visual_filter'):
+                spatial_kernels = tf.constant(
+                    kernel['spatial'],
+                    dtype=tf.float32,
+                    name='spatial_kernel')
+                temporal_kernels = tf.constant(
+                    kernel['temporal'],
+                    dtype=tf.float32,
+                    name='temporal_kernel')
+                n_kernel = spatial_kernels.shape[-1]
+                temporal_kernels = tf.split(
+                    temporal_kernels, n_kernel, axis=-1)
 
-            visual_input = tf.nn.conv3d(
-                input=visual_input,
-                filter=visual_kernel,
-                strides=(1, temporal_stride, 1, 1, 1),
-                padding='VALID',
-                name='visual_conv'
+                visual_input = tf.transpose(visual_input, (1, 4, 2, 3, 0))
+                spatial_filter = tf.nn.conv3d(
+                    input=visual_input,
+                    filter=spatial_kernels,
+                    strides=(1, 1, 4, 4, 1),
+                    padding='SAME',
+                    name='visual_conv'
+                )
+                spatial_filter = tf.transpose(spatial_filter, (1, 0, 2, 3, 4))
+                spatial_filter = tf.split(spatial_filter, n_kernel, axis=-1)
+
+                visual_input = []
+                for spatial, temporal in zip(spatial_filter, temporal_kernels):
+                    visual_input.append(
+                        tf.nn.conv3d(
+                            input=spatial,
+                            filter=temporal,
+                            strides=(1, temporal_stride, 1, 1, 1),
+                            padding='VALID',
+                            name='temporal_conv'
+                        )
+                    )
+
+                visual_input = tf.concat(visual_input, 0)
+                visual_input = tf.transpose(visual_input, [4, 1, 2, 3, 0])
+            conv1 = visual_input
+        else:
+            conv1 = tf.layers.conv3d(
+                inputs=visual_input,
+                filters=16,
+                kernel_size=(1, 8, 8),
+                strides=(1, 4, 4),
+                activation=tf.nn.elu,
+                name='conv1'
             )
-
-        conv1 = tf.layers.conv3d(
-            inputs=visual_input,
-            filters=16,
-            kernel_size=(1, 8, 8),
-            strides=(1, 4, 4),
-            activation=tf.nn.elu,
-            name='conv1'
-        )
 
         conv2 = tf.layers.conv3d(
             inputs=conv1,
@@ -142,21 +171,22 @@ class AC_Network:
         # Create summaries
         if self.add_summary:
             # Weights
-            print(tf.get_variable('conv1/kernel').shape)
-            conv1_kernel = tf.transpose(
-                tf.reduce_mean(
-                    tf.squeeze(tf.get_variable('conv1/kernel')),
-                    keepdims=True,
-                    axis=2
-                ),
-                [3, 0, 1, 2]
-            )
-            tf.summary.image(
-                'Conv1Spatial', conv1_kernel, max_outputs=16)
-
-            print(visual_input.shape)
-            tf.summary.image(
-                'VisualInput', visual_input[0, ..., :3])
+            if kernel is None:
+                conv1_kernel = tf.transpose(
+                    tf.reduce_mean(
+                        tf.squeeze(tf.get_variable('conv1/kernel')),
+                        keepdims=True,
+                        axis=2
+                    ),
+                    [3, 0, 1, 2]
+                )
+                tf.summary.image(
+                    'Conv1Spatial', conv1_kernel, max_outputs=16)
+            else:
+                input_channels = tf.transpose(
+                    visual_input[:, 0, ...], (3, 1, 2, 0))
+                tf.summary.image(
+                    'VisualInput', input_channels, max_outputs=6)
 
             # tf.summary.scalar(
             #     'Weights/Conv1', tf.reduce_sum(tf.abs(conv1_kernel)))

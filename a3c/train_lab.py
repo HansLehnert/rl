@@ -74,7 +74,7 @@ def main(argv):
 
     # Load kernel
     if args.kernel is not None:
-        kernel = np.load(args.kernel)
+        kernel = np.load(args.kernel)[()]
     else:
         kernel = None
 
@@ -99,7 +99,7 @@ def main(argv):
         else:
             enable_viewport = False
 
-        if not args.test:
+        if not args.test and worker_id == 0:
             worker_summary = model_dir
         else:
             worker_summary = None
