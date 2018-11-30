@@ -12,6 +12,7 @@ class AC_Network:
             reward_feedback=False,
             visual_depth=1,
             temporal_stride=1,
+            kernel=None,
             name='',
     ):
         self.name = name
@@ -34,14 +35,25 @@ class AC_Network:
         # Create network
         with tf.variable_scope(self.name, '', reuse=tf.AUTO_REUSE):
             self._create_shared_network(
-                input_dim, reward_feedback, visual_depth, temporal_stride)
+                input_dim,
+                reward_feedback,
+                visual_depth,
+                temporal_stride,
+                kernel
+            )
             self._create_ac_network()
             self._create_loss(prediction_loss)
             self._create_gradient_op()
             self._merge_summaries()
 
     def _create_shared_network(
-            self, input_dim, reward_feedback, visual_depth, temporal_stride):
+            self,
+            input_dim,
+            reward_feedback,
+            visual_depth,
+            temporal_stride,
+            kernel,
+    ):
         """Defines input processing part of the network.
 
         Override to change network architecture."""
@@ -56,17 +68,33 @@ class AC_Network:
                 shape=[None], dtype=tf.float32, name='reward_input')
             self.inputs.append(reward_input)
 
-        input_normalized = tf.to_float(visual_input) * 2 / 255.0 - 1
+        with tf.variable_scope('image_normalization'):
+            # Normalization
+            visual_input = tf.to_float(visual_input) * 2 / 255.0 - 1
+            visual_input = tf.expand_dims(visual_input, 0)
 
         # Convolutional layers
+        if kernel is not None:
+            visual_kernel = tf.constant(
+                kernel, dtype=tf.float32, name='visual_kernel')
+
+            visual_input = tf.nn.conv3d(
+                input=visual_input,
+                filter=visual_kernel,
+                strides=(1, temporal_stride, 1, 1, 1),
+                padding='VALID',
+                name='visual_conv'
+            )
+
         conv1 = tf.layers.conv3d(
-            inputs=tf.expand_dims(input_normalized, 0),
+            inputs=visual_input,
             filters=16,
-            kernel_size=(visual_depth, 8, 8),
-            strides=(temporal_stride, 4, 4),
+            kernel_size=(1, 8, 8),
+            strides=(1, 4, 4),
             activation=tf.nn.elu,
             name='conv1'
         )
+
         conv2 = tf.layers.conv3d(
             inputs=conv1,
             filters=32,
@@ -114,12 +142,21 @@ class AC_Network:
         # Create summaries
         if self.add_summary:
             # Weights
+            print(tf.get_variable('conv1/kernel').shape)
             conv1_kernel = tf.transpose(
-                tf.reduce_mean(tf.get_variable('conv1/kernel'), axis=0),
+                tf.reduce_mean(
+                    tf.squeeze(tf.get_variable('conv1/kernel')),
+                    keepdims=True,
+                    axis=2
+                ),
                 [3, 0, 1, 2]
             )
             tf.summary.image(
-                'Kernel/Conv1Spatial', conv1_kernel, max_outputs=16)
+                'Conv1Spatial', conv1_kernel, max_outputs=16)
+
+            print(visual_input.shape)
+            tf.summary.image(
+                'VisualInput', visual_input[0, ..., :3])
 
             # tf.summary.scalar(
             #     'Weights/Conv1', tf.reduce_sum(tf.abs(conv1_kernel)))

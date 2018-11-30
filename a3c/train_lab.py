@@ -1,9 +1,10 @@
 import sys
 import os
-import tensorflow as tf
 import multiprocessing
 import argparse
 import functools
+import tensorflow as tf
+import numpy as np
 
 import estimators
 from env.lab import LabEnvironment as Environment
@@ -43,14 +44,17 @@ def main(argv):
     parser.add_argument(
         '--temporal-filter', action='store_true')
     parser.add_argument(
-        '--color', default='rgb')
+        '--color', default='rgb', choices=['rgb', 'lab'],
+        help='color space for the environment observations')
+    parser.add_argument(
+        '--kernel')
 
     args = parser.parse_args(argv)
 
     model_dir = args.model_dir
     if not model_dir.endswith(os.sep):
         model_dir += os.sep
-    os.makedirs(model_dir)
+    os.makedirs(model_dir, exist_ok=True)
 
     # Set the number of workers
     if args.test:
@@ -68,6 +72,12 @@ def main(argv):
     optimizer = tf.train.RMSPropOptimizer(
         1e-5, 0.99, 0.95, 1e-2, use_locking=True)
 
+    # Load kernel
+    if args.kernel is not None:
+        kernel = np.load(args.kernel)
+    else:
+        kernel = None
+
     # Global network, to be updated by worker threads
     net = estimators.AC_Network(
         n_out=len(Environment.ACTIONS),
@@ -76,6 +86,7 @@ def main(argv):
         prediction_loss=args.prediction,
         visual_depth=(8 if args.temporal_filter else 1),
         temporal_stride=(4 if args.temporal_filter else 1),
+        kernel=kernel,
     )
 
     # Create workers graphs
@@ -83,12 +94,15 @@ def main(argv):
     for worker_id in range(n_workers):
         worker_name = 'worker_{:02}'.format(worker_id)
 
-        enable_viewport = False
-        worker_summary = None
         if worker_id == 0:
             enable_viewport = args.viewport
-            if not args.test:
-                worker_summary = model_dir
+        else:
+            enable_viewport = False
+
+        if not args.test:
+            worker_summary = model_dir
+        else:
+            worker_summary = None
 
         worker = AC_Worker(
             name=worker_name,
