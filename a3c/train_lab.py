@@ -99,7 +99,7 @@ def main(argv):
         else:
             enable_viewport = False
 
-        if not args.test and worker_id == 0:
+        if not args.test:
             worker_summary = model_dir
         else:
             worker_summary = None
