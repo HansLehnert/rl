@@ -5,6 +5,7 @@ import argparse
 import functools
 import tensorflow as tf
 import numpy as np
+import json
 
 import estimators
 from env.lab import LabEnvironment as Environment
@@ -48,19 +49,31 @@ def main(argv):
         help='color space for the environment observations')
     parser.add_argument(
         '--kernel')
+    parser.add_argument('-r', '--resume', action='store_true')
 
     args = parser.parse_args(argv)
 
     model_dir = args.model_dir
     if not model_dir.endswith(os.sep):
         model_dir += os.sep
-    os.makedirs(model_dir, exist_ok=True)
+
+    # Load config for training resuming
+    config_filename = os.path.join(model_dir, 'train_config.json')
+
+    if args.resume:
+        with open(config_filename) as config_file:
+            args = json.load(config_file)
+    else:
+        args = vars(args)
+        os.makedirs(model_dir, exist_ok=True)
+        with open(config_filename, 'w') as config_file:
+            json.dump(args, config_file, indent=4)
 
     # Set the number of workers
-    if args.test:
+    if args['test']:
         n_workers = 1
     else:
-        n_workers = args.n
+        n_workers = args['n']
         if n_workers is None:
             n_workers = multiprocessing.cpu_count()
 
@@ -73,8 +86,8 @@ def main(argv):
         1e-5, 0.99, 0.95, 1e-2, use_locking=True)
 
     # Load kernel
-    if args.kernel is not None:
-        kernel = np.load(args.kernel)[()]
+    if args['kernel'] is not None:
+        kernel = np.load(args['kernel'])[()]
     else:
         kernel = None
 
@@ -82,10 +95,10 @@ def main(argv):
     net = estimators.AC_Network(
         n_out=len(Environment.ACTIONS),
         optimizer=optimizer,
-        reward_feedback=args.reward_feedback,
-        prediction_loss=args.prediction,
-        visual_depth=(8 if args.temporal_filter else 1),
-        temporal_stride=(4 if args.temporal_filter else 1),
+        reward_feedback=args['reward_feedback'],
+        prediction_loss=args['prediction'],
+        visual_depth=(8 if args['temporal_filter'] else 1),
+        temporal_stride=(4 if args['temporal_filter'] else 1),
         kernel=kernel,
     )
 
@@ -95,11 +108,11 @@ def main(argv):
         worker_name = 'worker_{:02}'.format(worker_id)
 
         if worker_id == 0:
-            enable_viewport = args.viewport
+            enable_viewport = args['viewport']
         else:
             enable_viewport = False
 
-        if not args.test:
+        if not args['test']:
             worker_summary = model_dir
         else:
             worker_summary = None
@@ -108,10 +121,10 @@ def main(argv):
             name=worker_name,
             env_class=Environment,
             env_params={
-                'level': args.level,
-                'reward_feedback': args.reward_feedback,
-                'skip_repeat_frames': not args.temporal_filter,
-                'color_space': args.color,
+                'level': args['level'],
+                'reward_feedback': args['reward_feedback'],
+                'skip_repeat_frames': not args['temporal_filter'],
+                'color_space': args['color'],
                 'plot': enable_viewport,
             },
             net=net,
@@ -119,14 +132,14 @@ def main(argv):
             param_queue=parameter_queue,
             grad_queue=gradient_queue,
             model_dir=worker_summary,
-            state_buffer=(1 if args.temporal_filter else 0, 0),
+            state_buffer=(1 if args['temporal_filter'] else 0, 0),
         )
         workers.append(worker)
 
     # Start worker threads
     worker_threads = []
     for n, worker in reversed(list(enumerate(workers))):
-        worker_fn = functools.partial(worker.run, args.t_max)
+        worker_fn = functools.partial(worker.run, args['t_max'])
         process = multiprocessing.Process(target=worker_fn)
         process.start()
         worker_threads.append(process)
@@ -136,10 +149,10 @@ def main(argv):
         parameter_queue,
         gradient_queue,
         model_dir,
-        args.train_steps,
+        args['train_steps'],
         n_workers,
-        learn=not args.test,
-        beholder=args.beholder,
+        learn=not args['test'],
+        beholder=args['beholder'],
     )
 
     learner.run()
