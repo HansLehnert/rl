@@ -307,8 +307,8 @@ class AC_Network:
         gradients = self.optimizer.compute_gradients(
             self.loss, self.local_vars)
         gradients = [g[0] for g in gradients]
-        self.gradients_out, self.gradient_norm = tf.clip_by_global_norm(
-            gradients, 50)
+        self.gradients_out, gradient_norm = tf.clip_by_global_norm(
+            gradients, 250)
 
         self.gradients_in = []
         for tensor in self.gradients_out:
@@ -326,6 +326,9 @@ class AC_Network:
             assign_op = tf.assign(var, placeholder)
             self.vars_in.append(placeholder)
             self.assign.append(assign_op)
+
+        # Summary
+        tf.summary.scalar('Loss/GradientNorm', gradient_norm)
 
     def _merge_summaries(self):
         self.summaries = tf.summary.merge_all(
