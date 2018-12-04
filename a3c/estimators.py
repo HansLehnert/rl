@@ -118,8 +118,8 @@ class AC_Network:
             conv1 = tf.layers.conv3d(
                 inputs=visual_input,
                 filters=16,
-                kernel_size=(1, 8, 8),
-                strides=(1, 4, 4),
+                kernel_size=(visual_depth, 8, 8),
+                strides=(temporal_stride, 4, 4),
                 activation=tf.nn.elu,
                 name='conv1'
             )
@@ -175,7 +175,6 @@ class AC_Network:
                 conv1_kernel = tf.transpose(
                     tf.reduce_mean(
                         tf.squeeze(tf.get_variable('conv1/kernel')),
-                        keepdims=True,
                         axis=2
                     ),
                     [3, 0, 1, 2]
