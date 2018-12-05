@@ -131,9 +131,11 @@ class LabEnvironment():
         if self.color_space == 'lab':
             for i in range(len(self._frames)):
                 self._frames[i] = skimage.color.rgb2lab(self._frames[i])
-                self._frames[i] += np.array([[[0, 128, 128]]])
-                self._frames[i] += np.array([[[2.55, 1, 1]]])
                 self._frames[i] = self._frames[i].astype(int)
+                self._frames[i][..., 1:] += 128
+                self._frames[i][..., 0] *= 255
+                self._frames[i][..., 0] //= 100
+                # self._frames[i] = self._frames[i].astype(int)
 
         if len(self._frames) > 0:
             self._frames = np.stack(self._frames, 0)
