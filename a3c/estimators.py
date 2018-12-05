@@ -174,8 +174,8 @@ class AC_Network:
             if kernel is None:
                 conv1_kernel = tf.transpose(
                     tf.reduce_mean(
-                        tf.squeeze(tf.get_variable('conv1/kernel')),
-                        axis=2
+                        tf.get_variable('conv1/kernel'),
+                        axis=0,
                     ),
                     [3, 0, 1, 2]
                 )
