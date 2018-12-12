@@ -70,7 +70,7 @@ def main(argv):
             json.dump(args, config_file, indent=4)
 
     # Set the number of workers
-    if args['test']:
+    if args['test'] and args['n'] is None:
         n_workers = 1
     else:
         n_workers = args['n']
