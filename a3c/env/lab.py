@@ -1,6 +1,7 @@
 import deepmind_lab
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.collections
 import skimage.color
 
 
@@ -40,11 +41,25 @@ class LabEnvironment():
         if self.plot:
             plt.figure('viewport')
             self.viewport = plt.imshow(np.zeros((84, 84)))
+
             plt.figure('map')
+
+            self.map_data = {}
+            self.map = matplotlib.collections.LineCollection([], linewidth=2)
+            plt.gca().add_collection(self.map)
+            self.map.set_color('k')
+            self.map_xlim = None
+            self.map_ylim = None
+
             self.points, = plt.plot([], [], c='g')
+            self.goal_points, = plt.plot([], [], c='orange')
             self.trajectory, = plt.plot([], [])
+
+
             plt.axis('equal')
             plt.show(block=False)
+
+        self.last_grid_pos = None
 
         self.reset()
 
@@ -55,9 +70,14 @@ class LabEnvironment():
 
         if self.plot:
             plt.figure('map')
+            plt.savefig('map.pdf')
+
             plt.cla()
             self.points, = plt.plot([], [], ls='', c='g', marker='o')
+            self.goal_points, = plt.plot([], [], ls='', c='orange', marker='o')
             self.trajectory, = plt.plot([], [])
+            self.last_grid_pos = None
+            plt.gca().add_collection(self.map)
 
     def step(self, action=None):
         if action == 'MOVE_FORWARD':
@@ -114,15 +134,92 @@ class LabEnvironment():
                     if step_reward == 10:
                         self.trajectory.set_linestyle('--')
                         self.trajectory, = plt.plot([], [])
+                        self.goal_points.set_xdata(
+                            np.append(self.goal_points.get_xdata(), position[0]))
+                        self.goal_points.set_ydata(
+                            np.append(self.goal_points.get_ydata(), position[1]))
                     elif step_reward != 0:
                         self.points.set_xdata(
                             np.append(self.points.get_xdata(), position[0]))
                         self.points.set_ydata(
                             np.append(self.points.get_ydata(), position[1]))
 
-                    axes = plt.gca()
-                    axes.relim()
-                    axes.autoscale_view()
+                    # Automapping
+                    grid_pos = (position[0] // 100, position[1] // 100)
+                    update_map = False
+                    if grid_pos not in self.map_data:
+                        self.map_data[grid_pos] = [1, 1, 1, 1]
+                        update_map = True
+                    if (self.last_grid_pos is not None
+                            and self.last_grid_pos != grid_pos):
+                        if grid_pos[0] == self.last_grid_pos[0]:
+                            if grid_pos[1] == self.last_grid_pos[1] + 1:
+                                self.map_data[grid_pos][2] = 0
+                                self.map_data[self.last_grid_pos][0] = 0
+                                update_map = True
+                            elif grid_pos[1] == self.last_grid_pos[1] - 1:
+                                self.map_data[grid_pos][0] = 0
+                                self.map_data[self.last_grid_pos][2] = 0
+                                update_map = True
+                        elif grid_pos[1] == self.last_grid_pos[1]:
+                            if grid_pos[0] == self.last_grid_pos[0] + 1:
+                                self.map_data[grid_pos][3] = 0
+                                self.map_data[self.last_grid_pos][1] = 0
+                                update_map = True
+                            elif grid_pos[0] == self.last_grid_pos[0] - 1:
+                                self.map_data[grid_pos][1] = 0
+                                self.map_data[self.last_grid_pos][3] = 0
+                                update_map = True
+                    self.last_grid_pos = grid_pos
+
+                    if update_map:
+                        lines = []
+                        for pos, walls in self.map_data.items():
+                            if self.map_xlim is None:
+                                self.map_xlim = [
+                                    pos[0] * 100 - 10, pos[0] * 100 + 110]
+                                self.map_ylim = [
+                                    pos[1] * 100 - 10, pos[1] * 100 + 110]
+                            else:
+                                self.map_xlim[0] = min(
+                                    self.map_xlim[0], pos[0] * 100 - 10)
+                                self.map_xlim[1] = max(
+                                    self.map_xlim[1], pos[0] * 100 + 110)
+                                self.map_ylim[0] = min(
+                                    self.map_ylim[0], pos[1] * 100 - 10)
+                                self.map_ylim[1] = max(
+                                    self.map_ylim[1], pos[1] * 100 + 110)
+
+
+                            if walls[0]:
+                                lines.append([
+                                    (pos[0] * 100, (pos[1] + 1) * 100),
+                                    ((pos[0] + 1) * 100, (pos[1] + 1) * 100)
+                                ])
+                            if walls[1]:
+                                lines.append([
+                                    ((pos[0] + 1) * 100, (pos[1] + 1) * 100),
+                                    ((pos[0] + 1) * 100, pos[1] * 100)
+                                ])
+                            if walls[2]:
+                                lines.append([
+                                    (pos[0] * 100, pos[1] * 100),
+                                    ((pos[0] + 1) * 100, pos[1] * 100)
+                                ])
+                            if walls[3]:
+                                lines.append([
+                                    (pos[0] * 100, pos[1] * 100),
+                                    (pos[0] * 100, (pos[1] + 1) * 100)
+                                ])
+                        self.map.set_segments(lines)
+
+                    # axes = plt.gca()
+                    # axes.relim()
+                    # axes.autoscale()
+                    # if update_map:
+                    #     axes.margins(10)
+                    plt.xlim(self.map_xlim)
+                    plt.ylim(self.map_ylim)
 
                     plt.draw()
                     plt.pause(1e-5)
