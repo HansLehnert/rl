@@ -1,0 +1,7 @@
+.venv/
+.vscode/
+models/
+fig/
+results/
+*.pdf
+*.npy
