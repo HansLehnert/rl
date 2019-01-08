@@ -12,6 +12,8 @@ class AC_Network:
             reward_feedback=False,
             visual_depth=1,
             temporal_stride=1,
+            entropy_regularization=0.0005,
+            nfilt=16,
             kernel=None,
             name='',
     ):
@@ -39,10 +41,14 @@ class AC_Network:
                 reward_feedback,
                 visual_depth,
                 temporal_stride,
-                kernel
+                kernel,
+                nfilt,
             )
             self._create_ac_network()
-            self._create_loss(prediction_loss)
+            self._create_loss(
+                prediction_loss,
+                entropy_regularization,
+            )
             self._create_gradient_op()
             self._merge_summaries()
 
@@ -53,6 +59,7 @@ class AC_Network:
             visual_depth,
             temporal_stride,
             kernel,
+            nfilt,
     ):
         """Defines input processing part of the network.
 
@@ -117,7 +124,7 @@ class AC_Network:
         else:
             conv1 = tf.layers.conv3d(
                 inputs=visual_input,
-                filters=16,
+                filters=nfilt,
                 kernel_size=(visual_depth, 8, 8),
                 strides=(temporal_stride, 4, 4),
                 activation=tf.nn.elu,
@@ -222,7 +229,7 @@ class AC_Network:
         self.value = tf.layers.dense(
             inputs=self.shared_output, units=1, name='value')
 
-    def _create_loss(self, prediction_loss):
+    def _create_loss(self, prediction_loss, entropy_regularization):
         """Create loss computation operations."""
         self.actions = tf.placeholder(
             shape=[None], dtype=tf.int32, name='actions')
@@ -241,13 +248,14 @@ class AC_Network:
         # Loss functions
         value_loss = tf.reduce_mean(
             tf.square(self.target_value - tf.squeeze(self.value)))
-        entropy_loss = -tf.reduce_mean(self.policy * tf.log(self.policy))
+        entropy_loss = -tf.reduce_mean(
+            self.policy * tf.log(self.policy + 1e-5))
         policy_loss = tf.reduce_mean(
             tf.log(responsible_outputs) * self.advantages)
         self.loss = (
             0.5 * value_loss
             - policy_loss
-            - 0.0005 * entropy_loss
+            - entropy_regularization * entropy_loss
         )
 
         if prediction_loss:

@@ -115,6 +115,8 @@ class Learner:
                     summary_writer.flush()
                 last_time = time
 
+        saver.save(session, self.model_dir, global_step=step)
+
         self.stop()
 
     def stop(self):

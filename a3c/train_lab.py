@@ -33,7 +33,7 @@ def main(argv):
     parser.add_argument(
         '--test', action='store_true', help='disable training')
     parser.add_argument(
-        '--train-steps', type=int, default=10**8,
+        '--train-steps', type=int, default=(25 * 10**6),
         help='maximum number of training steps')
     parser.add_argument(
         '--beholder', action='store_true', help='enable tensorboard beholder')
@@ -49,6 +49,11 @@ def main(argv):
         help='color space for the environment observations')
     parser.add_argument(
         '--kernel')
+    parser.add_argument(
+        '--nfilt', type=int, default=16,
+        help='number of filters in the first convolutional layer')
+    parser.add_argument(
+        '--entropy', type=float, default=0.001)
     parser.add_argument('-r', '--resume', action='store_true')
 
     args = parser.parse_args(argv)
@@ -99,6 +104,8 @@ def main(argv):
         prediction_loss=args['prediction'],
         visual_depth=(8 if args['temporal_filter'] else 1),
         temporal_stride=(4 if args['temporal_filter'] else 1),
+        entropy_regularization=args['entropy'],
+        nfilt=args['nfilt'],
         kernel=kernel,
     )
 
