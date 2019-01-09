@@ -67,7 +67,7 @@ class Learner:
         last_time = None
 
         # Update loop
-        while env_step < self.max_steps:
+        while env_step < self.max_steps or not self.learn:
             # Get grads
             grads, grad_steps = self.grad_queue.get()
 
