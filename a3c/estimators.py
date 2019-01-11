@@ -188,11 +188,6 @@ class AC_Network:
                 )
                 tf.summary.image(
                     'Conv1Spatial', conv1_kernel, max_outputs=16)
-            else:
-                input_channels = tf.transpose(
-                    visual_input[:, 0, ...], (3, 1, 2, 0))
-                tf.summary.image(
-                    'VisualInput', input_channels, max_outputs=6)
 
             # tf.summary.scalar(
             #     'Weights/Conv1', tf.reduce_sum(tf.abs(conv1_kernel)))
