@@ -164,6 +164,8 @@ def main(argv):
 
     learner.run()
 
+    for worker_thread in worker_threads:
+        worker_thread.join()
 
 if __name__ == '__main__':
     main(sys.argv[1:])

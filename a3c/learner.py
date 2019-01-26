@@ -121,4 +121,5 @@ class Learner:
 
     def stop(self):
         for i in range(self.n_workers):
+            self.grad_queue.get()
             self.param_queue.put('end')
