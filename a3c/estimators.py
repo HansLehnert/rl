@@ -8,7 +8,7 @@ class AC_Network:
             optimizer,
             input_dim=None,
             add_summary=True,
-            prediction_loss=False,
+            prediction_loss=None,
             reward_feedback=False,
             visual_depth=1,
             temporal_stride=1,
@@ -177,17 +177,18 @@ class AC_Network:
 
         # Create summaries
         if self.add_summary:
+            pass
             # Weights
-            if kernel is None:
-                conv1_kernel = tf.transpose(
-                    tf.reduce_mean(
-                        tf.get_variable('conv1/kernel'),
-                        axis=0,
-                    ),
-                    [3, 0, 1, 2]
-                )
-                tf.summary.image(
-                    'Conv1Spatial', conv1_kernel, max_outputs=16)
+            # if kernel is None:
+            #     conv1_kernel = tf.transpose(
+            #         tf.reduce_mean(
+            #             tf.get_variable('conv1/kernel'),
+            #             axis=0,
+            #         ),
+            #         [3, 0, 1, 2]
+            #     )
+            #     tf.summary.image(
+            #         'Conv1Spatial', conv1_kernel, max_outputs=16)
 
             # tf.summary.scalar(
             #     'Weights/Conv1', tf.reduce_sum(tf.abs(conv1_kernel)))
@@ -257,33 +258,41 @@ class AC_Network:
             # State prediction
             prediction_input = tf.concat(
                 [self.internal_representation, self.actions_onehot], 1)
-            state_prediction = tf.layers.dense(
+            dense_2 = tf.layers.dense(
                 prediction_input,
+                512,
+                name='fc_state_prediction',
+                activation=tf.nn.elu
+            )
+            state_prediction = tf.layers.dense(
+                dense_2,
                 256,
                 name='state_prediction',
-                activation=tf.nn.elu)
+                activation=tf.nn.elu
+            )
 
             prediction_error = (
                 state_prediction[:-1, :]
                 - self.internal_representation[1:, :]
             )
             state_loss = tf.reduce_mean(tf.square(prediction_error))
+            self.loss += prediction_loss * state_loss
 
             # Inverse kinematics
-            dense = tf.layers.dense(
-                tf.concat(
-                    [self.internal_representation[:-1],
-                        self.internal_representation[:-1]],
-                    1),
-                64
-            )
+            # dense = tf.layers.dense(
+            #     tf.concat(
+            #         [self.internal_representation[:-1],
+            #             self.internal_representation[:-1]],
+            #         1),
+            #     64
+            # )
 
-            predicted_action = tf.layers.dense(dense, self.n_out)
+            # predicted_action = tf.layers.dense(dense, self.n_out)
 
-            kinematics_loss = tf.losses.softmax_cross_entropy(
-                self.actions_onehot[:-1, :], predicted_action)
+            # kinematics_loss = tf.losses.softmax_cross_entropy(
+            #     self.actions_onehot[:-1, :], predicted_action)
 
-            self.loss += 0.01 * state_loss + 0.005 * kinematics_loss
+            # self.loss += 0.01 * state_loss + 0.005 * kinematics_loss
 
         # Create summaries
         if self.add_summary:
@@ -294,7 +303,7 @@ class AC_Network:
 
             if prediction_loss:
                 tf.summary.scalar('Loss/StatePrediction', state_loss)
-                tf.summary.scalar('Loss/ActionPrediction', kinematics_loss)
+                # tf.summary.scalar('Loss/ActionPrediction', kinematics_loss)
 
             tf.summary.scalar('Perf/Value', tf.reduce_mean(self.value))
             tf.summary.scalar(

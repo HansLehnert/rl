@@ -38,7 +38,7 @@ def main(argv):
     parser.add_argument(
         '--beholder', action='store_true', help='enable tensorboard beholder')
     parser.add_argument(
-        '--prediction', action='store_true', help='include prediction loss')
+        '--prediction', type=float, help='include prediction loss')
     parser.add_argument(
         '--reward-feedback', action='store_true',
         help='add reward feedback into the network')
@@ -166,6 +166,7 @@ def main(argv):
 
     for worker_thread in worker_threads:
         worker_thread.join()
+
 
 if __name__ == '__main__':
     main(sys.argv[1:])
