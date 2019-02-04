@@ -1,9 +1,13 @@
+"""Script for plotting tensorflow summaries from multiple models.
+
+Plot description is stored on separate .json file
+"""
+
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats
 import os
-import collections
 import sys
 import json
 
@@ -19,6 +23,27 @@ plt.figure(figsize=(8, 4))
 
 for plot_name, logs in plot_config.items():
     print('Plotting', plot_name)
+
+    plot_filename = plot_name + '.pdf'
+
+    # Check modification date to avoid unnecessary replotting
+    if os.path.exists(plot_filename):
+        plot_time = os.path.getmtime(plot_filename)
+
+        skip = True
+        for log in logs:
+            for log_path in log[1:]:
+                if os.path.exists(log_path):
+                    log_time = os.path.getmtime(log_path)
+                    if log_time > plot_time:
+                        skip = False
+                        break
+            if not skip:
+                break
+
+        if skip:
+            print('No changes. Skipping.')
+            continue
 
     data = []
 
@@ -53,6 +78,10 @@ for plot_name, logs in plot_config.items():
                         print('Error, skipping', filename)
 
         values.sort()
+
+        if len(values) == 0:
+            print('No values logged for', log_name)
+            values.append((0, 0))
 
         t, y = zip(*values)
         mean = []
@@ -94,4 +123,4 @@ for plot_name, logs in plot_config.items():
     plt.grid()
     plt.xlabel('Actor actions')
     plt.ylabel('Average reward per episode')
-    plt.savefig(plot_name + '.pdf', bbox_inches='tight', format='pdf')
+    plt.savefig(plot_filename, bbox_inches='tight', format='pdf')
