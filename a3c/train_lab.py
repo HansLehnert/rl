@@ -54,6 +54,8 @@ def main(argv):
         help='number of filters in the first convolutional layer')
     parser.add_argument(
         '--entropy', type=float, default=0.001)
+    parser.add_argument(
+        '--batch-size', type=int, default=1)
     parser.add_argument('-r', '--resume', action='store_true')
 
     args = parser.parse_args(argv)
@@ -158,6 +160,7 @@ def main(argv):
         model_dir,
         args['train_steps'],
         n_workers,
+        args['batch_size'],
         learn=not args['test'],
         beholder=args['beholder'],
     )
