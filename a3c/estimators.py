@@ -8,7 +8,8 @@ class AC_Network:
             optimizer,
             input_dim=None,
             add_summary=True,
-            prediction_loss=None,
+            state_prediction_loss=None,
+            action_prediction_loss=None,
             reward_feedback=False,
             visual_depth=1,
             temporal_stride=1,
@@ -46,7 +47,8 @@ class AC_Network:
             )
             self._create_ac_network()
             self._create_loss(
-                prediction_loss,
+                state_prediction_loss,
+                action_prediction_loss,
                 entropy_regularization,
             )
             self._create_gradient_op()
@@ -225,7 +227,12 @@ class AC_Network:
         self.value = tf.layers.dense(
             inputs=self.shared_output, units=1, name='value')
 
-    def _create_loss(self, prediction_loss, entropy_regularization):
+    def _create_loss(
+            self,
+            state_prediction_loss,
+            action_prediction_loss,
+            entropy_regularization
+    ):
         """Create loss computation operations."""
         self.actions = tf.placeholder(
             shape=[None], dtype=tf.int32, name='actions')
@@ -254,7 +261,7 @@ class AC_Network:
             - entropy_regularization * entropy_loss
         )
 
-        if prediction_loss:
+        if state_prediction_loss:
             # State prediction
             prediction_input = tf.concat(
                 [self.internal_representation, self.actions_onehot], 1)
@@ -276,23 +283,25 @@ class AC_Network:
                 - self.internal_representation[1:, :]
             )
             state_loss = tf.reduce_mean(tf.square(prediction_error))
-            self.loss += prediction_loss * state_loss
+            self.loss += state_prediction_loss * state_loss
 
+        if action_prediction_loss:
             # Inverse kinematics
-            # dense = tf.layers.dense(
-            #     tf.concat(
-            #         [self.internal_representation[:-1],
-            #             self.internal_representation[:-1]],
-            #         1),
-            #     64
-            # )
+            dense = tf.layers.dense(
+                tf.concat(
+                    [self.internal_representation[:-1],
+                        self.internal_representation[1:]],
+                    1),
+                256
+            )
 
-            # predicted_action = tf.layers.dense(dense, self.n_out)
+            predicted_action = tf.layers.dense(
+                dense, self.n_out, name='action_prediction')
 
-            # kinematics_loss = tf.losses.softmax_cross_entropy(
-            #     self.actions_onehot[:-1, :], predicted_action)
+            kinematics_loss = tf.losses.softmax_cross_entropy(
+                self.actions_onehot[:-1, :], predicted_action)
 
-            # self.loss += 0.01 * state_loss + 0.005 * kinematics_loss
+            self.loss += action_prediction_loss * kinematics_loss
 
         # Create summaries
         if self.add_summary:
@@ -301,9 +310,10 @@ class AC_Network:
             tf.summary.scalar('Loss/Entropy', entropy_loss)
             tf.summary.scalar('Loss/Total', self.loss)
 
-            if prediction_loss:
+            if state_prediction_loss:
                 tf.summary.scalar('Loss/StatePrediction', state_loss)
-                # tf.summary.scalar('Loss/ActionPrediction', kinematics_loss)
+            if action_prediction_loss:
+                tf.summary.scalar('Loss/ActionPrediction', kinematics_loss)
 
             tf.summary.scalar('Perf/Value', tf.reduce_mean(self.value))
             tf.summary.scalar(

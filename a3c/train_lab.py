@@ -38,7 +38,9 @@ def main(argv):
     parser.add_argument(
         '--beholder', action='store_true', help='enable tensorboard beholder')
     parser.add_argument(
-        '--prediction', type=float, help='include prediction loss')
+        '--prediction', type=float, help='include state prediction loss')
+    parser.add_argument(
+        '--action_prediction', type=float, help='action prediction loss value')
     parser.add_argument(
         '--reward-feedback', action='store_true',
         help='add reward feedback into the network')
@@ -54,7 +56,7 @@ def main(argv):
         help='number of filters in the first convolutional layer')
     parser.add_argument(
         '--entropy', type=float, default=0.001)
-    parser.add_argument('-r', '--resume', action='store_true')
+    parser.add_argument('-r', '--resume', action='store_true')z
 
     args = parser.parse_args(argv)
 
@@ -101,7 +103,8 @@ def main(argv):
         n_out=len(Environment.ACTIONS),
         optimizer=optimizer,
         reward_feedback=args['reward_feedback'],
-        prediction_loss=args['prediction'],
+        state_prediction_loss=args['prediction'],
+        action_prediction_loss=args['action_prediction'],
         visual_depth=(8 if args['temporal_filter'] else 1),
         temporal_stride=(4 if args['temporal_filter'] else 1),
         entropy_regularization=args['entropy'],
