@@ -234,8 +234,9 @@ class AC_Worker:
     def update_vars(self):
         response = self.param_queue.get()
 
-        if isinstance(response, str) and response == 'end':
-            self.active = False
+        if isinstance(response, str):
+            if response == 'end':
+                self.active = False
         else:
             self._step, params = response
 

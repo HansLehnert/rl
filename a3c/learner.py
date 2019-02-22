@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 import tensorboard.plugins.beholder
 import datetime
 import os.path
@@ -7,13 +8,14 @@ import os.path
 class Learner:
     def __init__(
             self, net, param_queue, grad_queue, model_dir, max_steps,
-            n_workers, learn=True, beholder=False, **kwargs
+            n_workers, batch_size, learn=True, beholder=False, **kwargs
     ):
         self.net = net
         self.param_queue = param_queue
         self.grad_queue = grad_queue
         self.max_steps = max_steps
         self.n_workers = n_workers
+        self.batch_size = batch_size
         self.learn = learn
         self.enable_beholder = beholder
 
@@ -66,6 +68,8 @@ class Learner:
 
         last_time = None
 
+        batch = []
+
         # Update loop
         while env_step < self.max_steps or not self.learn:
             # Get grads
@@ -80,10 +84,21 @@ class Learner:
 
             # Update network
             if self.learn:
-                session.run(
-                    self.net.apply_gradients,
-                    dict(zip(self.net.gradients_in, grads))
-                )
+                batch.append(grads)
+
+                # Only update when enough gradients have been received
+                if len(batch) > self.batch_size:
+                    # Compute the average gradient
+                    avg_grads = []
+                    for i in range(len(batch[0])):
+                        avg_grads.append(np.mean([g[i] for g in batch], 0))
+
+                    session.run(
+                        self.net.apply_gradients,
+                        dict(zip(self.net.gradients_in, avg_grads))
+                    )
+
+                    batch = []
 
             # Send parameters back
             local_vars = session.run(self.net.local_vars)
