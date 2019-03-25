@@ -71,7 +71,13 @@ def main(argv):
 
     if args.resume:
         with open(config_filename) as config_file:
-            args = json.load(config_file)
+            loaded_args = json.load(config_file)
+        if args.test:
+            loaded_args['viewport'] = args.viewport
+            loaded_args['n'] = args.n
+            loaded_args['test'] = True
+        args = vars(args)
+        args.update(loaded_args)
     else:
         args = vars(args)
         os.makedirs(model_dir, exist_ok=True)
